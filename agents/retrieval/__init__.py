@@ -1,4 +1,4 @@
-﻿from .base import SearchHit
+from .base import SearchHit
 from .keyword import KeywordRetriever
 from .tfidf import TfidfRetriever
 

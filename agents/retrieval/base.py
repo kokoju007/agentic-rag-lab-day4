@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
@@ -13,5 +13,4 @@ class SearchHit:
 
 
 class Retriever(Protocol):
-    def search(self, query: str, top_k: int = 5) -> list[SearchHit]:
-        ...
+    def search(self, query: str, top_k: int = 5) -> list[SearchHit]: ...

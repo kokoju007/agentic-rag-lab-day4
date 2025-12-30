@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from collections import Counter
@@ -24,8 +24,6 @@ class KeywordRetriever:
             score = float(sum((q & t).values()))
             if score <= 0:
                 continue
-            hits.append(
-                SearchHit(score=score, doc_id=doc_id, chunk_id="full", text=text[:800])
-            )
+            hits.append(SearchHit(score=score, doc_id=doc_id, chunk_id="full", text=text[:800]))
         hits.sort(key=lambda h: (-h.score, h.doc_id))
         return hits[:top_k]

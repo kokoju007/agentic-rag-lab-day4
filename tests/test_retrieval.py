@@ -1,4 +1,4 @@
-﻿from agents.retrieval.tfidf import TfidfRetriever
+from agents.retrieval.tfidf import TfidfRetriever
 
 
 def test_tfidf_retriever_returns_hits(tmp_path, monkeypatch):

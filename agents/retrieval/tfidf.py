@@ -1,7 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import math
-import os
 import pickle
 import re
 from dataclasses import dataclass
@@ -9,7 +8,6 @@ from pathlib import Path
 from typing import Final
 
 from .base import SearchHit
-
 
 _TOKEN_RE: Final[re.Pattern[str]] = re.compile(r"[0-9A-Za-z가-힣]+", re.IGNORECASE)
 
@@ -191,5 +189,8 @@ class TfidfRetriever:
         hits: list[SearchHit] = []
         for score, i in scored[:top_k]:
             ch = self._chunks[i]
-            hits.append(SearchHit(score=score, doc_id=ch.doc_id, chunk_id=ch.chunk_id, text=ch.text))
+            hits.append(
+    SearchHit(score=score, doc_id=ch.doc_id, chunk_id=ch.chunk_id, text=ch.text)
+)
+
         return hits
