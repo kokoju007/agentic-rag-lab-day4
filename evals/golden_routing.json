@@ -1,0 +1,64 @@
+[
+  {
+    "id": "route-001",
+    "query": "README에 있는 실행 방법을 알려줘.",
+    "expected_agent": "DocSearchAgent",
+    "notes": "Docs keyword triggers doc routing."
+  },
+  {
+    "id": "route-002",
+    "query": "Day-1 /ask 엔드포인트는 어떤 역할이야?",
+    "expected_agent": "DocSearchAgent"
+  },
+  {
+    "id": "route-003",
+    "query": "runbook 문서에 배포 단계가 있니?",
+    "expected_agent": "DocSearchAgent"
+  },
+  {
+    "id": "route-004",
+    "query": "architecture 결정 사항이 뭐야?",
+    "expected_agent": "DocSearchAgent"
+  },
+  {
+    "id": "route-005",
+    "query": "eval 계획 문서 요약해줘.",
+    "expected_agent": "DocSearchAgent"
+  },
+  {
+    "id": "route-006",
+    "query": "FastAPI가 뭐야?",
+    "expected_agent": "DirectAnswerAgent"
+  },
+  {
+    "id": "route-007",
+    "query": "오늘 날씨 알려줘.",
+    "expected_agent": "DirectAnswerAgent"
+  },
+  {
+    "id": "route-008",
+    "query": "간단한 인사말을 만들어줘.",
+    "expected_agent": "DirectAnswerAgent"
+  },
+  {
+    "id": "route-009",
+    "query": "docs에서 테스트 정책을 확인하고 싶어.",
+    "expected_agent": "DocSearchAgent"
+  },
+  {
+    "id": "route-010",
+    "query": "Day2 retro 내용이 궁금해.",
+    "expected_agent": "DirectAnswerAgent",
+    "notes": "No explicit keyword; should stay direct answer."
+  },
+  {
+    "id": "route-011",
+    "query": "endpoint는 어떻게 호출하지?",
+    "expected_agent": "DocSearchAgent"
+  },
+  {
+    "id": "route-012",
+    "query": "의미 있는 한 문장을 작성해줘.",
+    "expected_agent": "DirectAnswerAgent"
+  }
+]
