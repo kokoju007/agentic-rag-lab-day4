@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Final
 
-
 _SENSITIVE_KEYWORDS: Final[list[str]] = [
     "시스템 프롬프트",
     "비밀번호",
