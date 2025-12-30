@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel, Field
 
+from agents.guardrails import evaluate_question
 from agents.orchestrator import Orchestrator
 
 logger = logging.getLogger("app")
@@ -27,6 +28,7 @@ class AskResponse(BaseModel):
     evidence: list[str] = Field(..., description="Evidence snippets supporting the answer.")
     trace_id: str = Field(..., description="Trace identifier for observability.")
     citations: list[str] = Field(..., description="External citations, if any.")
+    guardrail: dict[str, str | bool] = Field(..., description="Guardrail evaluation result.")
 
 
 @app.middleware("http")
@@ -55,6 +57,19 @@ def health() -> dict[str, str]:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest, request: Request) -> AskResponse:
+    guardrail = evaluate_question(payload.question)
+    if guardrail["blocked"]:
+        request.state.chosen_agent = "guardrail"
+        request.state.evidence_count = 0
+        return AskResponse(
+            answer="요청하신 내용은 처리할 수 없습니다.",
+            chosen_agent="guardrail",
+            evidence=[],
+            trace_id=request.state.trace_id,
+            citations=[],
+            guardrail=guardrail,
+        )
+
     orchestrator = Orchestrator()
     chosen_agent, result = orchestrator.route_with_choice(payload.question)
     request.state.chosen_agent = chosen_agent
@@ -65,4 +80,5 @@ def ask(payload: AskRequest, request: Request) -> AskResponse:
         evidence=result.evidence,
         trace_id=request.state.trace_id,
         citations=[],
+        guardrail=guardrail,
     )
