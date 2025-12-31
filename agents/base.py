@@ -8,6 +8,9 @@ from typing import Protocol
 class AgentResult:
     answer: str
     evidence: list[str]
+    confidence: float | None = None
+    usage: dict[str, int] | None = None
+    model: str | None = None
 
 
 class Agent(Protocol):

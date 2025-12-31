@@ -27,6 +27,8 @@ async def test_ask_routes_to_doc_search() -> None:
     assert len(payload["evidence"]) >= 1
     assert isinstance(payload["citations"], list)
     assert payload["guardrail"]["blocked"] is False
+    assert payload["usage"] is None or isinstance(payload["usage"], dict)
+    assert payload["human_review"]["needed"] is False
 
 
 @pytest.mark.anyio
@@ -40,6 +42,8 @@ async def test_ask_routes_to_direct_answer() -> None:
     assert isinstance(payload["evidence"], list)
     assert isinstance(payload["citations"], list)
     assert payload["guardrail"]["blocked"] is False
+    assert payload["usage"] is None or isinstance(payload["usage"], dict)
+    assert payload["human_review"]["needed"] is False
 
 
 @pytest.mark.anyio
@@ -51,3 +55,17 @@ async def test_ask_blocked_response_is_sanitized() -> None:
     assert payload["guardrail"]["blocked"] is True
     assert payload["evidence"] == []
     assert payload["citations"] == []
+    assert payload["human_review"]["needed"] is True
+    assert payload["human_review"]["reason"] == "policy_blocked"
+
+
+@pytest.mark.anyio
+async def test_ask_low_confidence_triggers_human_review() -> None:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/ask", json={"question": "day1 quasar flux?"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["chosen_agent"] == "doc_search"
+    assert payload["guardrail"]["blocked"] is False
+    assert payload["human_review"]["needed"] is True
+    assert payload["human_review"]["reason"] == "low_retrieval_confidence"

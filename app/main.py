@@ -6,29 +6,15 @@ import time
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
-from pydantic import BaseModel, Field
 
-from agents.guardrails import evaluate_question
-from agents.orchestrator import Orchestrator
+from app.ask_logic import build_ask_outcome
+from app.schemas import AskRequest, AskResponse
 
 logger = logging.getLogger("app")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Agentic RAG Lab")
-
-
-class AskRequest(BaseModel):
-    question: str = Field(..., description="User question to route and answer.")
-
-
-class AskResponse(BaseModel):
-    answer: str = Field(..., description="Final answer returned to the user.")
-    chosen_agent: str = Field(..., description="Agent selected by the orchestrator.")
-    evidence: list[str] = Field(..., description="Evidence snippets supporting the answer.")
-    trace_id: str = Field(..., description="Trace identifier for observability.")
-    citations: list[str] = Field(..., description="External citations, if any.")
-    guardrail: dict[str, str | bool] = Field(..., description="Guardrail evaluation result.")
 
 
 @app.middleware("http")
@@ -46,6 +32,11 @@ async def trace_middleware(request: Request, call_next) -> Response:
         "evidence_count": getattr(request.state, "evidence_count", None),
         "status": response.status_code,
     }
+    usage = getattr(request.state, "usage", None)
+    if usage:
+        log_payload["usage_prompt_tokens"] = usage.get("prompt_tokens")
+        log_payload["usage_completion_tokens"] = usage.get("completion_tokens")
+        log_payload["usage_total_tokens"] = usage.get("total_tokens")
     logger.info(json.dumps(log_payload, ensure_ascii=False))
     return response
 
@@ -57,28 +48,8 @@ def health() -> dict[str, str]:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest, request: Request) -> AskResponse:
-    guardrail = evaluate_question(payload.question)
-    if guardrail["blocked"]:
-        request.state.chosen_agent = "guardrail"
-        request.state.evidence_count = 0
-        return AskResponse(
-            answer="요청하신 내용은 처리할 수 없습니다.",
-            chosen_agent="guardrail",
-            evidence=[],
-            trace_id=request.state.trace_id,
-            citations=[],
-            guardrail=guardrail,
-        )
-
-    orchestrator = Orchestrator()
-    chosen_agent, result = orchestrator.route_with_choice(payload.question)
-    request.state.chosen_agent = chosen_agent
-    request.state.evidence_count = len(result.evidence)
-    return AskResponse(
-        answer=result.answer,
-        chosen_agent=chosen_agent,
-        evidence=result.evidence,
-        trace_id=request.state.trace_id,
-        citations=[],
-        guardrail=guardrail,
-    )
+    outcome = build_ask_outcome(payload.question, request.state.trace_id)
+    request.state.chosen_agent = outcome.chosen_agent
+    request.state.evidence_count = outcome.evidence_count
+    request.state.usage = outcome.usage
+    return outcome.response

@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agents.orchestrator import Orchestrator  # noqa: E402
+from app.ask_logic import build_ask_outcome  # noqa: E402
 
 DATASET_PATH = Path("evals/golden_routing.json")
 REPORT_PATH = Path("evals/report.json")
@@ -20,18 +20,26 @@ AGENT_NAME_MAP = {
 }
 
 
-def load_dataset(path: Path) -> list[dict[str, str]]:
+def load_dataset(path: Path) -> list[dict[str, object]]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def evaluate(cases: list[dict[str, str]]) -> dict[str, object]:
-    orchestrator = Orchestrator()
+def evaluate(cases: list[dict[str, object]]) -> dict[str, object]:
     results: list[dict[str, object]] = []
     correct = 0
     for case in cases:
         expected = AGENT_NAME_MAP.get(case["expected_agent"], case["expected_agent"])
-        chosen_agent, _ = orchestrator.route_with_choice(case["query"])
-        is_correct = chosen_agent == expected
+        outcome = build_ask_outcome(case["query"], trace_id="eval")
+        response = outcome.response
+        checks: list[bool] = [outcome.chosen_agent == expected]
+        if "expected_guardrail_blocked" in case:
+            checks.append(response.guardrail["blocked"] == case["expected_guardrail_blocked"])
+        if "expected_human_review_needed" in case:
+            human_review = response.human_review
+            checks.append((human_review is not None) and human_review.needed == case["expected_human_review_needed"])
+        if "expected_evidence_nonempty" in case:
+            checks.append((len(response.evidence) > 0) == case["expected_evidence_nonempty"])
+        is_correct = all(checks)
         if is_correct:
             correct += 1
         results.append(
@@ -39,7 +47,10 @@ def evaluate(cases: list[dict[str, str]]) -> dict[str, object]:
                 "id": case["id"],
                 "query": case["query"],
                 "expected_agent": expected,
-                "chosen_agent": chosen_agent,
+                "chosen_agent": outcome.chosen_agent,
+                "guardrail_blocked": response.guardrail["blocked"],
+                "human_review_needed": response.human_review.needed if response.human_review else None,
+                "evidence_count": len(response.evidence),
                 "passed": is_correct,
             }
         )

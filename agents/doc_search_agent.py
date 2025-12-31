@@ -1,45 +1,32 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from agents.base import AgentResult
+from agents.retrieval import SearchHit, TfidfRetriever
 
 
 class DocSearchAgent:
     name = "doc_search"
 
-    def __init__(self, docs_path: Path | None = None) -> None:
+    def __init__(self, docs_path: Path | None = None, retriever: TfidfRetriever | None = None) -> None:
         self._docs_path = docs_path or Path("docs")
+        self._retriever = retriever or TfidfRetriever(root=str(self._docs_path))
 
     def run(self, question: str) -> AgentResult:
-        keywords = self._extract_keywords(question)
-        evidence: list[str] = []
-        if self._docs_path.exists():
-            for path in sorted(self._docs_path.rglob("*.md")):
-                try:
-                    lines = path.read_text(encoding="utf-8").splitlines()
-                except OSError:
-                    continue
-                for line_number, line in enumerate(lines, start=1):
-                    if self._matches(line, keywords):
-                        evidence.append(f"{path.as_posix()}:{line_number}: {line.strip()}")
-                    if len(evidence) >= 5:
-                        break
-                if len(evidence) >= 5:
-                    break
+        hits = self._retriever.search(question, top_k=5)
+        evidence = [self._format_hit(hit) for hit in hits]
+        confidence = hits[0].score if hits else 0.0
 
         if evidence:
-            answer = "문서에서 관련 내용을 찾았습니다. 증거를 확인해주세요."
+            answer = "氍胳劀?愳劀 甏€???挫毄??彀眷晿?惦媹?? 歃濌卑毳??曥澑?挫＜?胳殧."
         else:
-            answer = "문서에서 관련 내용을 찾지 못했습니다."
+            answer = "氍胳劀?愳劀 甏€???挫毄??彀眷? 氇豁枅?惦媹??"
 
-        return AgentResult(answer=answer, evidence=evidence)
+        return AgentResult(answer=answer, evidence=evidence, confidence=confidence)
 
-    def _extract_keywords(self, question: str) -> list[str]:
-        tokens = re.findall(r"[\w/.-]+", question.lower())
-        return [token for token in tokens if len(token) > 1]
-
-    def _matches(self, line: str, keywords: list[str]) -> bool:
-        lowered = line.lower()
-        return any(keyword in lowered for keyword in keywords)
+    def _format_hit(self, hit: SearchHit) -> str:
+        snippet = " ".join(hit.text.splitlines()).strip()
+        if len(snippet) > 240:
+            snippet = f"{snippet[:237]}..."
+        return f"{hit.doc_id}:{hit.chunk_id}: {snippet}"
