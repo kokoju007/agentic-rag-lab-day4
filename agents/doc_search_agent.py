@@ -19,9 +19,9 @@ class DocSearchAgent:
         confidence = hits[0].score if hits else 0.0
 
         if evidence:
-            answer = "氍胳劀?愳劀 甏€???挫毄??彀眷晿?惦媹?? 歃濌卑毳??曥澑?挫＜?胳殧."
+            answer = "문서를 참고해 요약을 제공합니다."
         else:
-            answer = "氍胳劀?愳劀 甏€???挫毄??彀眷? 氇豁枅?惦媹??"
+            answer = "관련 문서를 찾지 못했습니다."
 
         return AgentResult(answer=answer, evidence=evidence, confidence=confidence)
 

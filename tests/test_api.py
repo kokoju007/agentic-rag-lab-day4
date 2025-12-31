@@ -101,6 +101,7 @@ async def test_ask_routes_korean_backup_to_doc_search() -> None:
     assert payload["build"] == "day5-hotfix-984aa37"
     assert payload["chosen_agent"] == "doc_search"
     assert len(payload["evidence"]) >= 1
+    assert payload["answer"] == "문서를 참고해 요약을 제공합니다."
 
 
 @pytest.mark.anyio
