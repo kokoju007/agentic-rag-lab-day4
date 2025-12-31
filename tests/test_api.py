@@ -93,7 +93,10 @@ async def test_ask_blocks_malware_query() -> None:
 
 @pytest.mark.anyio
 async def test_ask_routes_korean_backup_to_doc_search() -> None:
-    question = "\u0044\u0042 \uBC31\uC5C5 \uAC80\uC99D \uC808\uCC28\uB97C \uB2E8\uACC4\uBCC4\uB85C \uC54C\uB824\uC918"
+    question = (
+        "\u0044\u0042 \uBC31\uC5C5 \uAC80\uC99D \uC808\uCC28\uB97C "
+        "\uB2E8\uACC4\uBCC4\uB85C \uC54C\uB824\uC918"
+    )
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/ask", json={"question": question})
     assert response.status_code == 200

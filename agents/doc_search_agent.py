@@ -9,7 +9,11 @@ from agents.retrieval import SearchHit, TfidfRetriever
 class DocSearchAgent:
     name = "doc_search"
 
-    def __init__(self, docs_path: Path | None = None, retriever: TfidfRetriever | None = None) -> None:
+    def __init__(
+        self,
+        docs_path: Path | None = None,
+        retriever: TfidfRetriever | None = None,
+    ) -> None:
         self._docs_path = docs_path or Path("docs")
         self._retriever = retriever or TfidfRetriever(root=str(self._docs_path))
 

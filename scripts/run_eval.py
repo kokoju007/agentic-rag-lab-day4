@@ -36,7 +36,10 @@ def evaluate(cases: list[dict[str, object]]) -> dict[str, object]:
             checks.append(response.guardrail["blocked"] == case["expected_guardrail_blocked"])
         if "expected_human_review_needed" in case:
             human_review = response.human_review
-            checks.append((human_review is not None) and human_review.needed == case["expected_human_review_needed"])
+            checks.append(
+                (human_review is not None)
+                and human_review.needed == case["expected_human_review_needed"]
+            )
         if "expected_evidence_nonempty" in case:
             checks.append((len(response.evidence) > 0) == case["expected_evidence_nonempty"])
         is_correct = all(checks)
@@ -49,7 +52,9 @@ def evaluate(cases: list[dict[str, object]]) -> dict[str, object]:
                 "expected_agent": expected,
                 "chosen_agent": outcome.chosen_agent,
                 "guardrail_blocked": response.guardrail["blocked"],
-                "human_review_needed": response.human_review.needed if response.human_review else None,
+                "human_review_needed": (
+                    response.human_review.needed if response.human_review else None
+                ),
                 "evidence_count": len(response.evidence),
                 "passed": is_correct,
             }
