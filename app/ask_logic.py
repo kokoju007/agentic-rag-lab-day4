@@ -24,14 +24,14 @@ _MISSING_CONTEXT_ACTIONS = [
     "Share the timeframe, ticket/alert ID, and error message.",
 ]
 _INCIDENT_KEYWORDS = [
-    "ì§€?œì£¼",
-    "?´ì œ",
-    "?¤ëŠ˜",
-    "?´ë²ˆì£?,
-    "?¥ì• ",
-    "?ì¸",
+    "지난주",
+    "어제",
+    "오늘",
+    "이번주",
+    "장애",
+    "원인",
     "incident",
-    "?Œë¦¼",
+    "알림",
 ]
 _ENV_KEYWORDS = [
     "prod",
@@ -40,7 +40,7 @@ _ENV_KEYWORDS = [
     "stage",
     "dev",
     "qa",
-    "?˜ê²½",
+    "환경",
 ]
 _SYSTEM_KEYWORDS = [
     "system",
@@ -48,10 +48,10 @@ _SYSTEM_KEYWORDS = [
     "server",
     "db",
     "database",
-    "?œìŠ¤??,
-    "?œë¹„??,
-    "?œë²„",
-    "?°ì´?°ë² ?´ìŠ¤",
+    "시스템",
+    "서비스",
+    "서버",
+    "데이터베이스",
 ]
 
 
@@ -72,7 +72,7 @@ def _human_review_not_needed() -> HumanReview:
 
 
 def _has_ticket_id(question: str) -> bool:
-    tokens = ["ticket", "incident", "alert", "case", "?°ì¼“", "?Œë¦¼", "?¸ì‹œ?˜íŠ¸"]
+    tokens = ["ticket", "incident", "alert", "case", "티켓", "알림", "인시던트"]
     if any(token in question for token in tokens) and any(char.isdigit() for char in question):
         return True
     return False
@@ -98,7 +98,7 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
     guardrail = evaluate_question(question)
     if guardrail["blocked"]:
         response = AskResponse(
-            answer="??ç®”?æ©ƒå«š ??«æ¯„???è§³æ©‚???????¢å§·??§å«Ÿ.",
+            answer="보안 정책상 해당 요청은 처리할 수 없습니다.",
             chosen_agent="guardrail",
             evidence=[],
             trace_id=trace_id,
