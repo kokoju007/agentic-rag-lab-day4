@@ -30,4 +30,4 @@ class AskResponse(BaseModel):
     model: str | None = Field(default=None, description="Model identifier when available.")
     human_review: HumanReview | None = Field(default=None, description="Human review hints.")
     build: str | None = Field(default=None, description="Build marker for debugging.")
-    debug_guardrail_blocked: bool | None = Field(default=None, description="Debug guardrail blocked state.")
+    debug_guardrail_blocked: bool = Field(default=False, description="Debug guardrail blocked state.")

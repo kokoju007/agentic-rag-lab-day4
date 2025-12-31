@@ -96,7 +96,8 @@ def _needs_missing_context(question: str) -> bool:
 def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
     build_marker = "day5-hotfix-984aa37"
     guardrail = evaluate_question(question)
-    if guardrail["blocked"]:
+    debug_guardrail_blocked = bool(guardrail.get("blocked", False))
+    if debug_guardrail_blocked:
         response = AskResponse(
             answer="보안 정책상 해당 요청은 처리할 수 없습니다.",
             chosen_agent="guardrail",
@@ -108,7 +109,7 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
             model=None,
             human_review=_human_review_needed("policy_blocked", _POLICY_BLOCKED_ACTIONS),
             build=build_marker,
-            debug_guardrail_blocked=guardrail["blocked"],
+            debug_guardrail_blocked=debug_guardrail_blocked,
         )
         return AskOutcome(response=response, chosen_agent="guardrail", evidence_count=0, usage=None)
 
@@ -133,6 +134,7 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
         model=result.model,
         human_review=human_review,
         build=build_marker,
+        debug_guardrail_blocked=debug_guardrail_blocked,
     )
     return AskOutcome(
         response=response,
