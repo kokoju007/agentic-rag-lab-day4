@@ -29,3 +29,4 @@ class AskResponse(BaseModel):
     usage: Usage | None = Field(default=None, description="Token usage when available.")
     model: str | None = Field(default=None, description="Model identifier when available.")
     human_review: HumanReview | None = Field(default=None, description="Human review hints.")
+    build: str | None = Field(default=None, description="Build marker for debugging.")
