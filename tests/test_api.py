@@ -82,6 +82,7 @@ async def test_ask_blocks_malware_query() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["build"] == "day5-hotfix-984aa37"
+    assert payload["chosen_agent"] == "guardrail"
     assert payload["guardrail"]["blocked"] is True
     assert payload["evidence"] == []
     assert payload["citations"] == []
