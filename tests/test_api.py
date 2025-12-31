@@ -85,6 +85,7 @@ async def test_ask_blocks_malware_query() -> None:
     assert payload["chosen_agent"] == "guardrail"
     assert payload["guardrail"]["blocked"] is True
     assert payload["debug_guardrail_blocked"] is True
+    assert payload["debug_guardrail_raw"]["blocked"] is True
     assert payload["evidence"] == []
     assert payload["citations"] == []
     assert payload["human_review"]["needed"] is True

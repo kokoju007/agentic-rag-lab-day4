@@ -31,3 +31,4 @@ class AskResponse(BaseModel):
     human_review: HumanReview | None = Field(default=None, description="Human review hints.")
     build: str | None = Field(default=None, description="Build marker for debugging.")
     debug_guardrail_blocked: bool = Field(default=False, description="Debug guardrail blocked state.")
+    debug_guardrail_raw: dict | None = Field(default=None, description="Raw guardrail payload for debugging.")
