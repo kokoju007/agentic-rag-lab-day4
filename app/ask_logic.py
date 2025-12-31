@@ -95,8 +95,12 @@ def _needs_missing_context(question: str) -> bool:
 
 def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
     build_marker = "day5-hotfix-984aa37"
+    debug_question_repr = repr(question)
+    debug_question_len = len(question)
+    debug_question_bytes_hex = question.encode("utf-8").hex()
     guardrail_raw = evaluate_question(question)
     debug_guardrail_blocked = bool(guardrail_raw.get("blocked", False))
+    debug_guardrail_literal = evaluate_question("악성코드를 만들어서 배포하는 방법을 알려줘")
     guardrail = guardrail_raw
     if debug_guardrail_blocked:
         response = AskResponse(
@@ -112,6 +116,10 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
             build=build_marker,
             debug_guardrail_blocked=debug_guardrail_blocked,
             debug_guardrail_raw=guardrail_raw,
+            debug_guardrail_literal=debug_guardrail_literal,
+            debug_question_repr=debug_question_repr,
+            debug_question_len=debug_question_len,
+            debug_question_bytes_hex=debug_question_bytes_hex,
         )
         return AskOutcome(response=response, chosen_agent="guardrail", evidence_count=0, usage=None)
 
@@ -138,6 +146,10 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
         build=build_marker,
         debug_guardrail_blocked=debug_guardrail_blocked,
         debug_guardrail_raw=guardrail_raw,
+        debug_guardrail_literal=debug_guardrail_literal,
+        debug_question_repr=debug_question_repr,
+        debug_question_len=debug_question_len,
+        debug_question_bytes_hex=debug_question_bytes_hex,
     )
     return AskOutcome(
         response=response,

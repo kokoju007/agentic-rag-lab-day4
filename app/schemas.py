@@ -32,3 +32,7 @@ class AskResponse(BaseModel):
     build: str | None = Field(default=None, description="Build marker for debugging.")
     debug_guardrail_blocked: bool = Field(default=False, description="Debug guardrail blocked state.")
     debug_guardrail_raw: dict | None = Field(default=None, description="Raw guardrail payload for debugging.")
+    debug_guardrail_literal: dict | None = Field(default=None, description="Guardrail payload for literal test.")
+    debug_question_repr: str | None = Field(default=None, description="Debug repr(question).")
+    debug_question_len: int | None = Field(default=None, description="Debug length of question.")
+    debug_question_bytes_hex: str | None = Field(default=None, description="Debug UTF-8 bytes hex.")
