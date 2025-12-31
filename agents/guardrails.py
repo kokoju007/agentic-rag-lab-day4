@@ -8,10 +8,12 @@ _SENSITIVE_KEYWORDS: Final[list[str]] = [
     "토큰",
     "내부 문서 전부",
     "dump",
+    "malware",
     "prompt",
     "system prompt",
     "password",
     "token",
+    "악성코드",
 ]
 
 

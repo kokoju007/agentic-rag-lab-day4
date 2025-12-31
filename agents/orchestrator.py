@@ -24,7 +24,6 @@ class Orchestrator:
     def _is_doc_question(self, question: str) -> bool:
         lowered = question.lower()
         doc_keywords = [
-            "문서",
             "docs",
             "readme",
             "runbook",
@@ -35,7 +34,20 @@ class Orchestrator:
             "day1",
             "ask",
             "/ask",
-            "엔드포인트",
             "endpoint",
+            "엔드포인트",
+            "백업",
+            "복구",
+            "검증",
+            "절차",
+            "런북",
+            "운영",
+            "체크리스트",
+            "장애",
+            "원인",
+            "모니터링",
+            "티켓",
+            "알림",
+            "incident",
         ]
         return any(keyword in lowered for keyword in doc_keywords)

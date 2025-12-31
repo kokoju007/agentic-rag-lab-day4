@@ -1,6 +1,7 @@
 # Database Backup/Restore Runbook
 
 ## Backup Verification Checklist
+DB 백업 검증 절차: 최신 백업 성공 여부, 체크섬 확인, 보존 정책 확인, 기록 남기기.
 1. Confirm latest backup job status is "success" in the scheduler.
 2. Verify backup file size and checksum against the previous run.
 3. Ensure retention policy keeps at least 7 daily and 4 weekly backups.
