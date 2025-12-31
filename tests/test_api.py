@@ -104,6 +104,7 @@ async def test_ask_routes_korean_backup_to_doc_search() -> None:
     assert payload["chosen_agent"] == "doc_search"
     assert len(payload["evidence"]) >= 1
     assert payload["answer"] == "문서를 참고해 요약을 제공합니다."
+    assert any("DB 백업 검증 절차" in snippet for snippet in payload["evidence"])
     assert all("ë°±" not in snippet for snippet in payload["evidence"])
     assert any("백업" in snippet for snippet in payload["evidence"])
 

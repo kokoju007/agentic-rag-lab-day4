@@ -119,7 +119,7 @@ class TfidfRetriever:
             try:
                 text = p.read_text(encoding="utf-8")
             except Exception:
-                text = p.read_text(errors="ignore")
+                text = p.read_text(encoding="utf-8", errors="replace")
             doc_id = str(p).replace("\\", "/")
             for i, c in enumerate(_chunk_text(text)):
                 chunks.append(_Chunk(doc_id=doc_id, chunk_id=f"{i}", text=c))
