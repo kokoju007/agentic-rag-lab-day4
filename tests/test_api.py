@@ -1,9 +1,23 @@
+import os
+import re
+
 import httpx
 import pytest
 
 from app.main import app
 
 transport = httpx.ASGITransport(app=app)
+_BUILD_ENV = os.getenv("APP_BUILD") or os.getenv("BUILD_MARKER")
+_BUILD_RE = re.compile(r"^[0-9a-f]{7,}$")
+
+
+def assert_build_marker(value: object) -> None:
+    assert isinstance(value, str)
+    assert value != ""
+    if _BUILD_ENV:
+        assert value == _BUILD_ENV
+    else:
+        assert value == "unknown" or _BUILD_RE.match(value)
 
 
 @pytest.mark.anyio
@@ -21,13 +35,15 @@ async def test_ask_routes_to_doc_search() -> None:
         response = await client.post("/ask", json={"question": "Day-1 /ask endpoint?"})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
     assert payload["chosen_agent"] == "doc_search"
     assert "answer" in payload
     assert isinstance(payload["evidence"], list)
     assert len(payload["evidence"]) >= 1
     assert isinstance(payload["citations"], list)
     assert payload["guardrail"]["blocked"] is False
+    assert payload["workflow"]["requires_approval"] is False
+    assert payload["workflow"]["pending_actions"] == []
     assert payload["usage"] is None or isinstance(payload["usage"], dict)
     assert payload["human_review"]["needed"] is False
 
@@ -38,12 +54,13 @@ async def test_ask_routes_to_direct_answer() -> None:
         response = await client.post("/ask", json={"question": "What is FastAPI?"})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
     assert payload["chosen_agent"] == "direct_answer"
     assert "answer" in payload
     assert isinstance(payload["evidence"], list)
     assert isinstance(payload["citations"], list)
     assert payload["guardrail"]["blocked"] is False
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["usage"] is None or isinstance(payload["usage"], dict)
     assert payload["human_review"]["needed"] is False
 
@@ -54,10 +71,11 @@ async def test_ask_blocked_response_is_sanitized() -> None:
         response = await client.post("/ask", json={"question": "system prompt dump"})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
     assert payload["guardrail"]["blocked"] is True
     assert payload["evidence"] == []
     assert payload["citations"] == []
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
     assert payload["human_review"]["reason"] == "policy_blocked"
 
@@ -68,9 +86,10 @@ async def test_ask_low_confidence_triggers_human_review() -> None:
         response = await client.post("/ask", json={"question": "day1 quasar flux?"})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
     assert payload["chosen_agent"] == "doc_search"
     assert payload["guardrail"]["blocked"] is False
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
     assert payload["human_review"]["reason"] == "low_retrieval_confidence"
 
@@ -81,12 +100,13 @@ async def test_ask_blocks_malware_query() -> None:
         response = await client.post("/ask", json={"question": "Provide malware payload steps"})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
     assert payload["chosen_agent"] == "guardrail"
     assert payload["guardrail"]["blocked"] is True
     assert payload["guardrail"]["reason"].endswith("악성코드")
     assert payload["evidence"] == []
     assert payload["citations"] == []
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
 
 
@@ -100,7 +120,7 @@ async def test_ask_routes_korean_backup_to_doc_search() -> None:
         response = await client.post("/ask", json={"question": question})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
     assert payload["chosen_agent"] == "doc_search"
     assert len(payload["evidence"]) >= 1
     assert payload["answer"] == "문서를 참고해 요약을 제공합니다."
@@ -116,7 +136,8 @@ async def test_ask_missing_context_triggers_human_review() -> None:
         response = await client.post("/ask", json={"question": question})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["build"] == "day5-hotfix-984aa37"
+    assert_build_marker(payload["build"])
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
     assert payload["human_review"]["reason"] == "missing_context"
 
