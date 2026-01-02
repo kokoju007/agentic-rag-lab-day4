@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 
 from agents.guardrails import evaluate_question
 from agents.orchestrator import Orchestrator
@@ -102,8 +105,28 @@ def _needs_missing_context(question: str) -> bool:
     return True
 
 
+@lru_cache(maxsize=1)
+def _resolve_build_marker() -> str:
+    env_marker = os.getenv("APP_BUILD") or os.getenv("BUILD_MARKER")
+    if env_marker:
+        return env_marker
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
+BUILD_MARKER = _resolve_build_marker()
+
+
 def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
-    build_marker = "day5-hotfix-984aa37"
+    build_marker = BUILD_MARKER
     guardrail = evaluate_question(question)
     if guardrail["blocked"]:
         response = AskResponse(
