@@ -28,6 +28,8 @@ async def test_ask_routes_to_doc_search() -> None:
     assert len(payload["evidence"]) >= 1
     assert isinstance(payload["citations"], list)
     assert payload["guardrail"]["blocked"] is False
+    assert payload["workflow"]["requires_approval"] is False
+    assert payload["workflow"]["pending_actions"] == []
     assert payload["usage"] is None or isinstance(payload["usage"], dict)
     assert payload["human_review"]["needed"] is False
 
@@ -44,6 +46,7 @@ async def test_ask_routes_to_direct_answer() -> None:
     assert isinstance(payload["evidence"], list)
     assert isinstance(payload["citations"], list)
     assert payload["guardrail"]["blocked"] is False
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["usage"] is None or isinstance(payload["usage"], dict)
     assert payload["human_review"]["needed"] is False
 
@@ -58,6 +61,7 @@ async def test_ask_blocked_response_is_sanitized() -> None:
     assert payload["guardrail"]["blocked"] is True
     assert payload["evidence"] == []
     assert payload["citations"] == []
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
     assert payload["human_review"]["reason"] == "policy_blocked"
 
@@ -71,6 +75,7 @@ async def test_ask_low_confidence_triggers_human_review() -> None:
     assert payload["build"] == "day5-hotfix-984aa37"
     assert payload["chosen_agent"] == "doc_search"
     assert payload["guardrail"]["blocked"] is False
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
     assert payload["human_review"]["reason"] == "low_retrieval_confidence"
 
@@ -87,6 +92,7 @@ async def test_ask_blocks_malware_query() -> None:
     assert payload["guardrail"]["reason"].endswith("악성코드")
     assert payload["evidence"] == []
     assert payload["citations"] == []
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
 
 
@@ -117,6 +123,7 @@ async def test_ask_missing_context_triggers_human_review() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["build"] == "day5-hotfix-984aa37"
+    assert payload["workflow"]["requires_approval"] is False
     assert payload["human_review"]["needed"] is True
     assert payload["human_review"]["reason"] == "missing_context"
 

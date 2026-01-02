@@ -3,17 +3,26 @@ from __future__ import annotations
 from agents.base import Agent, AgentResult
 from agents.direct_answer_agent import DirectAnswerAgent
 from agents.doc_search_agent import DocSearchAgent
+from agents.workflow_agent import WorkflowAgent
 
 
 class Orchestrator:
-    def __init__(self, doc_search: Agent | None = None, direct_answer: Agent | None = None) -> None:
+    def __init__(
+        self,
+        doc_search: Agent | None = None,
+        direct_answer: Agent | None = None,
+        workflow: Agent | None = None,
+    ) -> None:
         self._doc_search = doc_search or DocSearchAgent()
         self._direct_answer = direct_answer or DirectAnswerAgent()
+        self._workflow = workflow or WorkflowAgent()
 
     def route(self, question: str) -> AgentResult:
         return self.route_with_choice(question)[1]
 
     def route_with_choice(self, question: str) -> tuple[str, AgentResult]:
+        if self._is_action_request(question):
+            return self._workflow.name, self._workflow.run(question)
         if self._is_doc_question(question):
             return self._doc_search.name, self._doc_search.run(question)
         return self._direct_answer.name, self._direct_answer.run(question)
@@ -51,3 +60,25 @@ class Orchestrator:
             "incident",
         ]
         return any(keyword in lowered for keyword in doc_keywords)
+
+    def _is_action_request(self, question: str) -> bool:
+        lowered = question.lower()
+        if "restart" in lowered or "재시작" in question:
+            return True
+        if "notify" in lowered or "알림" in question:
+            return True
+        ticket_requested = "ticket" in lowered and any(
+            verb in lowered for verb in ("create", "make", "open", "raise")
+        )
+        ticket_requested = ticket_requested or (
+            "티켓" in question and any(verb in question for verb in ("만들", "생성"))
+        )
+        if ticket_requested:
+            return True
+        runbook_requested = "runbook" in lowered and any(
+            verb in lowered for verb in ("generate", "create", "make", "write")
+        )
+        runbook_requested = runbook_requested or (
+            "런북" in question and any(verb in question for verb in ("작성", "만들"))
+        )
+        return runbook_requested

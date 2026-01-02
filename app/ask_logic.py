@@ -6,7 +6,7 @@ from agents.guardrails import evaluate_question
 from agents.orchestrator import Orchestrator
 from agents.usage import normalize_usage
 from app.config import RETRIEVAL_CONFIDENCE_THRESHOLD
-from app.schemas import AskResponse, HumanReview, Usage
+from app.schemas import AskResponse, HumanReview, Usage, Workflow
 
 _LOW_CONFIDENCE_ACTIONS = [
     "Add more context (system name, timeframe, error message).",
@@ -71,6 +71,15 @@ def _human_review_not_needed() -> HumanReview:
     return HumanReview(needed=False, reason="", suggested_actions=[])
 
 
+def _empty_workflow() -> Workflow:
+    return Workflow(
+        plan=[],
+        requires_approval=False,
+        pending_actions=[],
+        executed_actions=[],
+    )
+
+
 def _has_ticket_id(question: str) -> bool:
     tokens = ["ticket", "incident", "alert", "case", "티켓", "알림", "인시던트"]
     if any(token in question for token in tokens) and any(char.isdigit() for char in question):
@@ -104,6 +113,7 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
             trace_id=trace_id,
             citations=[],
             guardrail=guardrail,
+            workflow=_empty_workflow(),
             usage=None,
             model=None,
             human_review=_human_review_needed("policy_blocked", _POLICY_BLOCKED_ACTIONS),
@@ -121,6 +131,10 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
     elif result.confidence is not None and result.confidence < RETRIEVAL_CONFIDENCE_THRESHOLD:
         human_review = _human_review_needed("low_retrieval_confidence", _LOW_CONFIDENCE_ACTIONS)
 
+    workflow = _empty_workflow()
+    if result.workflow:
+        workflow = Workflow(**result.workflow)
+
     response = AskResponse(
         answer=result.answer,
         chosen_agent=chosen_agent,
@@ -128,6 +142,7 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
         trace_id=trace_id,
         citations=[],
         guardrail=guardrail,
+        workflow=workflow,
         usage=usage,
         model=result.model,
         human_review=human_review,
