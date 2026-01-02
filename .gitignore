@@ -3,3 +3,6 @@ __pycache__/
 .cache/
 evals/report.json
 demo-*.json
+payload.json
+approve.json
+*.demo.json
