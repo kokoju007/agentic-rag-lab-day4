@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 
 from app.ask_logic import build_ask_outcome
 from app.pending_store import (
@@ -13,6 +14,7 @@ from app.pending_store import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
+    STATUS_RUNNING,
     PendingActionStore,
 )
 from app.schemas import ApproveRequest, ApproveResponse, AskRequest, AskResponse, ToolResult
@@ -24,6 +26,7 @@ if not logger.handlers:
 
 app = FastAPI(title="Agentic RAG Lab")
 pending_store = PendingActionStore()
+RUNNING_STALE_SECONDS = 15 * 60
 
 
 @app.middleware("http")
@@ -72,74 +75,149 @@ def ask(payload: AskRequest, request: Request) -> AskResponse:
 
 @app.post("/approve", response_model=ApproveResponse)
 def approve(payload: ApproveRequest) -> ApproveResponse:
-    records = pending_store.list_actions(payload.trace_id)
-    pending_actions = [record.action for record in records if record.status == STATUS_PENDING]
+    record = pending_store.get_action(payload.action_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="action_not_found")
 
-    if not payload.approve:
-        pending_store.reject_pending(payload.trace_id, payload.approved_by)
-        logger.info(
-            json.dumps(
-                {
-                    "event": "approval",
-                    "trace_id": payload.trace_id,
-                    "approved": False,
-                    "approved_by": payload.approved_by,
-                    "pending_count": len(pending_actions),
-                },
-                ensure_ascii=False,
-            )
+    trace_id = record.trace_id
+    logger.info(
+        json.dumps(
+            {
+                "event": "approval_check",
+                "trace_id": trace_id,
+                "action_id": payload.action_id,
+                "status": record.status,
+                "approved_by": payload.approved_by,
+            },
+            ensure_ascii=False,
         )
+    )
+
+    completed_result = _tool_result_from_record(record)
+    if record.status in {STATUS_COMPLETED, STATUS_APPROVED} and completed_result:
         return ApproveResponse(
-            trace_id=payload.trace_id,
-            approved=False,
-            message="rejected",
-            executed_actions=[],
-            pending_actions=pending_actions,
+            trace_id=trace_id or "",
+            action_id=payload.action_id,
+            approved=True,
+            status=STATUS_COMPLETED,
+            message="completed",
+            executed_actions=[completed_result],
+            pending_actions=[],
         )
 
-    executed_actions: list[ToolResult] = []
-    for record in records:
-        if record.status in {STATUS_COMPLETED, STATUS_FAILED, STATUS_APPROVED} and record.result:
-            executed_actions.append(ToolResult(**record.result))
+    if record.status == STATUS_FAILED and not payload.retry:
+        failed_result = completed_result or _fallback_tool_result(record)
+        return ApproveResponse(
+            trace_id=trace_id or "",
+            action_id=payload.action_id,
+            approved=True,
+            status=STATUS_FAILED,
+            message="failed",
+            executed_actions=[failed_result],
+            pending_actions=[],
+        )
 
-    pending_records = [record for record in records if record.status == STATUS_PENDING]
-    if pending_records:
-        pending_store.approve_pending(payload.trace_id, payload.approved_by)
-        logger.info(
-            json.dumps(
-                {
-                    "event": "approval",
-                    "trace_id": payload.trace_id,
-                    "approved": True,
-                    "approved_by": payload.approved_by,
-                    "pending_count": len(pending_records),
-                },
-                ensure_ascii=False,
+    if record.status == STATUS_RUNNING:
+        if not payload.force or not _is_stale(record.started_at):
+            return ApproveResponse(
+                trace_id=trace_id or "",
+                action_id=payload.action_id,
+                approved=True,
+                status=STATUS_RUNNING,
+                message="running",
+                executed_actions=[],
+                pending_actions=[],
             )
+        pending_store.refresh_running(payload.action_id, payload.approved_by)
+
+    if record.status in {STATUS_PENDING, STATUS_APPROVED, STATUS_FAILED}:
+        allowed = [STATUS_PENDING, STATUS_APPROVED]
+        if record.status == STATUS_FAILED and payload.retry:
+            allowed = [STATUS_FAILED]
+        started = pending_store.start_action(payload.action_id, payload.approved_by, allowed)
+        if not started:
+            latest = pending_store.get_action(payload.action_id)
+            if latest and latest.status == STATUS_RUNNING:
+                return ApproveResponse(
+                    trace_id=latest.trace_id or "",
+                    action_id=payload.action_id,
+                    approved=True,
+                    status=STATUS_RUNNING,
+                    message="running",
+                    executed_actions=[],
+                    pending_actions=[],
+                )
+            if latest and latest.status == STATUS_COMPLETED:
+                latest_result = _tool_result_from_record(latest)
+                return ApproveResponse(
+                    trace_id=latest.trace_id or "",
+                    action_id=payload.action_id,
+                    approved=True,
+                    status=STATUS_COMPLETED,
+                    message="completed",
+                    executed_actions=[latest_result] if latest_result else [],
+                    pending_actions=[],
+                )
+
+    action = record.action
+    tool = str(action.get("tool", ""))
+    args = dict(action.get("args", {}))
+    try:
+        result = run_tool(tool, args)
+    except Exception as exc:
+        error = str(exc)
+        result = {"tool": tool, "ok": False, "output": "", "error": error}
+        pending_store.fail_action(payload.action_id, result, error)
+        return ApproveResponse(
+            trace_id=trace_id or "",
+            action_id=payload.action_id,
+            approved=True,
+            status=STATUS_FAILED,
+            message="failed",
+            executed_actions=[ToolResult(**result)],
+            pending_actions=[],
         )
-        for record in pending_records:
-            action = record.action
-            tool = str(action.get("tool", ""))
-            args = dict(action.get("args", {}))
-            try:
-                result = run_tool(tool, args)
-            except Exception as exc:
-                error = str(exc)
-                result = {"tool": tool, "ok": False, "output": "", "error": error}
-                pending_store.fail_action(record.action_id, result, error)
-                executed_actions.append(ToolResult(**result))
-                continue
-            if result.get("ok", False):
-                pending_store.complete_action(record.action_id, result)
-            else:
-                error = str(result.get("error") or "tool_failed")
-                pending_store.fail_action(record.action_id, result, error)
-            executed_actions.append(ToolResult(**result))
+    if result.get("ok", False):
+        pending_store.complete_action(payload.action_id, result)
+        status = STATUS_COMPLETED
+        message = "completed"
+    else:
+        error = str(result.get("error") or "tool_failed")
+        pending_store.fail_action(payload.action_id, result, error)
+        status = STATUS_FAILED
+        message = "failed"
 
     return ApproveResponse(
-        trace_id=payload.trace_id,
+        trace_id=trace_id or "",
+        action_id=payload.action_id,
         approved=True,
-        message="approved",
-        executed_actions=executed_actions,
+        status=status,
+        message=message,
+        executed_actions=[ToolResult(**result)],
         pending_actions=[],
     )
+
+
+def _tool_result_from_record(record) -> ToolResult | None:
+    if record.result:
+        return ToolResult(**record.result)
+    return None
+
+
+def _fallback_tool_result(record) -> ToolResult:
+    tool = str(record.action.get("tool", ""))
+    error = record.error or "failed"
+    return ToolResult(tool=tool, ok=False, output="", error=error)
+
+
+def _is_stale(started_at: str | None) -> bool:
+    if not started_at:
+        return True
+    try:
+        parsed = datetime.fromisoformat(started_at)
+    except ValueError:
+        return True
+    now = datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (now - parsed).total_seconds() > RUNNING_STALE_SECONDS

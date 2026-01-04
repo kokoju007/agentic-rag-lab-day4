@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 STATUS_PENDING = "PENDING"
-STATUS_APPROVED = "APPROVED"
-STATUS_REJECTED = "REJECTED"
+STATUS_RUNNING = "RUNNING"
 STATUS_COMPLETED = "COMPLETED"
 STATUS_FAILED = "FAILED"
+STATUS_APPROVED = "APPROVED"
+STATUS_REJECTED = "REJECTED"
 
 
 @dataclass
@@ -28,6 +29,7 @@ class PendingActionRecord:
     created_at: str
     approved_by: str | None
     approved_at: str | None
+    started_at: str | None
     result: dict[str, Any] | None
     error: str | None
 
@@ -74,7 +76,7 @@ class PendingActionStore:
             rows = conn.execute(
                 """
                 SELECT id, trace_id, status, action_json, created_at,
-                       approved_by, approved_at, result_json, error
+                       approved_by, approved_at, started_at, result_json, error
                 FROM pending_actions
                 WHERE trace_id = ?
                 ORDER BY created_at ASC
@@ -92,11 +94,38 @@ class PendingActionStore:
                     created_at=row["created_at"],
                     approved_by=row["approved_by"],
                     approved_at=row["approved_at"],
+                    started_at=row["started_at"],
                     result=json.loads(row["result_json"]) if row["result_json"] else None,
                     error=row["error"],
                 )
             )
         return records
+
+    def get_action(self, action_id: str) -> PendingActionRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, trace_id, status, action_json, created_at,
+                       approved_by, approved_at, started_at, result_json, error
+                FROM pending_actions
+                WHERE id = ?
+                """,
+                (action_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return PendingActionRecord(
+            action_id=row["id"],
+            trace_id=row["trace_id"],
+            status=row["status"],
+            action=json.loads(row["action_json"]) if row["action_json"] else {},
+            created_at=row["created_at"],
+            approved_by=row["approved_by"],
+            approved_at=row["approved_at"],
+            started_at=row["started_at"],
+            result=json.loads(row["result_json"]) if row["result_json"] else None,
+            error=row["error"],
+        )
 
     def approve_pending(self, trace_id: str, approved_by: str) -> None:
         approved_at = _now_iso()
@@ -121,6 +150,40 @@ class PendingActionStore:
                 """,
                 (STATUS_REJECTED, approved_by, approved_at, trace_id, STATUS_PENDING),
             )
+
+    def start_action(
+        self,
+        action_id: str,
+        approved_by: str,
+        allowed_statuses: list[str],
+    ) -> bool:
+        approved_at = _now_iso()
+        started_at = approved_at
+        placeholders = ",".join(["?"] * len(allowed_statuses))
+        query = f"""
+            UPDATE pending_actions
+            SET status = ?, approved_by = ?, approved_at = ?, started_at = ?
+            WHERE id = ? AND status IN ({placeholders})
+        """
+        params: list[str] = [STATUS_RUNNING, approved_by, approved_at, started_at, action_id]
+        params.extend(allowed_statuses)
+        with self._connect() as conn:
+            result = conn.execute(query, params)
+        return result.rowcount > 0
+
+    def refresh_running(self, action_id: str, approved_by: str) -> bool:
+        approved_at = _now_iso()
+        started_at = approved_at
+        with self._connect() as conn:
+            result = conn.execute(
+                """
+                UPDATE pending_actions
+                SET approved_by = ?, approved_at = ?, started_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                (approved_by, approved_at, started_at, action_id, STATUS_RUNNING),
+            )
+        return result.rowcount > 0
 
     def complete_action(self, action_id: str, result: dict[str, Any]) -> None:
         with self._connect() as conn:
@@ -165,16 +228,24 @@ class PendingActionStore:
                     created_at TEXT NOT NULL,
                     approved_by TEXT,
                     approved_at TEXT,
+                    started_at TEXT,
                     result_json TEXT,
                     error TEXT
                 )
                 """
             )
+            self._ensure_column(conn, "started_at", "TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _ensure_column(self, conn: sqlite3.Connection, name: str, definition: str) -> None:
+        rows = conn.execute("PRAGMA table_info(pending_actions)").fetchall()
+        existing = {row["name"] for row in rows}
+        if name not in existing:
+            conn.execute(f"ALTER TABLE pending_actions ADD COLUMN {name} {definition}")
 
 
 def _now_iso() -> str:

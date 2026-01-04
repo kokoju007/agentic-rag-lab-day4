@@ -58,14 +58,17 @@ class AskResponse(BaseModel):
 
 
 class ApproveRequest(BaseModel):
-    trace_id: str
-    approve: bool
+    action_id: str
     approved_by: str
+    retry: bool = False
+    force: bool = False
 
 
 class ApproveResponse(BaseModel):
     trace_id: str
+    action_id: str
     approved: bool
+    status: str
     message: str
     executed_actions: list[ToolResult]
     pending_actions: list[Action]
