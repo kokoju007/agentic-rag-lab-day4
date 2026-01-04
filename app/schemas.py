@@ -60,6 +60,7 @@ class AskResponse(BaseModel):
 class ApproveRequest(BaseModel):
     action_id: str
     approved_by: str
+    approve: bool = True
     retry: bool = False
     force: bool = False
 

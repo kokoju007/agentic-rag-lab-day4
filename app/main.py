@@ -14,6 +14,7 @@ from app.pending_store import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
+    STATUS_REJECTED,
     STATUS_RUNNING,
     PendingActionStore,
 )
@@ -93,6 +94,18 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
         )
     )
 
+    if not payload.approve:
+        pending_store.reject_action(payload.action_id, payload.approved_by)
+        return ApproveResponse(
+            trace_id=trace_id or "",
+            action_id=payload.action_id,
+            approved=False,
+            status=STATUS_REJECTED,
+            message="rejected",
+            executed_actions=[],
+            pending_actions=[],
+        )
+
     completed_result = _tool_result_from_record(record)
     if record.status in {STATUS_COMPLETED, STATUS_APPROVED} and completed_result:
         return ApproveResponse(
@@ -117,47 +130,53 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
             pending_actions=[],
         )
 
+    started = False
     if record.status == STATUS_RUNNING:
         if not payload.force or not _is_stale(record.started_at):
-            return ApproveResponse(
-                trace_id=trace_id or "",
-                action_id=payload.action_id,
-                approved=True,
-                status=STATUS_RUNNING,
-                message="running",
-                executed_actions=[],
-                pending_actions=[],
-            )
-        pending_store.refresh_running(payload.action_id, payload.approved_by)
+            return _running_response(trace_id, payload.action_id)
+        started = pending_store.start_action(
+            payload.action_id,
+            payload.approved_by,
+            [STATUS_RUNNING],
+        )
+    elif record.status in {STATUS_PENDING, STATUS_APPROVED}:
+        started = pending_store.start_action(
+            payload.action_id,
+            payload.approved_by,
+            [STATUS_PENDING, STATUS_APPROVED],
+        )
+    elif record.status == STATUS_FAILED and payload.retry:
+        started = pending_store.start_action(
+            payload.action_id,
+            payload.approved_by,
+            [STATUS_FAILED],
+        )
 
-    if record.status in {STATUS_PENDING, STATUS_APPROVED, STATUS_FAILED}:
-        allowed = [STATUS_PENDING, STATUS_APPROVED]
-        if record.status == STATUS_FAILED and payload.retry:
-            allowed = [STATUS_FAILED]
-        started = pending_store.start_action(payload.action_id, payload.approved_by, allowed)
+    if not started:
+        latest = pending_store.get_action(payload.action_id)
+        if latest:
+            latest_result = _tool_result_from_record(latest)
+            if latest.status == STATUS_RUNNING:
+                return _running_response(latest.trace_id, payload.action_id)
+            if latest.status == STATUS_COMPLETED and latest_result:
+                return _completed_response(latest.trace_id, payload.action_id, latest_result)
+            if latest.status == STATUS_FAILED:
+                if not payload.retry:
+                    failed_result = latest_result or _fallback_tool_result(latest)
+                    return _failed_response(latest.trace_id, payload.action_id, failed_result)
+                started = pending_store.start_action(
+                    payload.action_id,
+                    payload.approved_by,
+                    [STATUS_FAILED],
+                )
+            if latest.status == STATUS_APPROVED:
+                started = pending_store.start_action(
+                    payload.action_id,
+                    payload.approved_by,
+                    [STATUS_APPROVED],
+                )
         if not started:
-            latest = pending_store.get_action(payload.action_id)
-            if latest and latest.status == STATUS_RUNNING:
-                return ApproveResponse(
-                    trace_id=latest.trace_id or "",
-                    action_id=payload.action_id,
-                    approved=True,
-                    status=STATUS_RUNNING,
-                    message="running",
-                    executed_actions=[],
-                    pending_actions=[],
-                )
-            if latest and latest.status == STATUS_COMPLETED:
-                latest_result = _tool_result_from_record(latest)
-                return ApproveResponse(
-                    trace_id=latest.trace_id or "",
-                    action_id=payload.action_id,
-                    approved=True,
-                    status=STATUS_COMPLETED,
-                    message="completed",
-                    executed_actions=[latest_result] if latest_result else [],
-                    pending_actions=[],
-                )
+            return _running_response(trace_id, payload.action_id)
 
     action = record.action
     tool = str(action.get("tool", ""))
@@ -168,34 +187,14 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
         error = str(exc)
         result = {"tool": tool, "ok": False, "output": "", "error": error}
         pending_store.fail_action(payload.action_id, result, error)
-        return ApproveResponse(
-            trace_id=trace_id or "",
-            action_id=payload.action_id,
-            approved=True,
-            status=STATUS_FAILED,
-            message="failed",
-            executed_actions=[ToolResult(**result)],
-            pending_actions=[],
-        )
+        return _failed_response(trace_id, payload.action_id, ToolResult(**result))
     if result.get("ok", False):
         pending_store.complete_action(payload.action_id, result)
-        status = STATUS_COMPLETED
-        message = "completed"
+        return _completed_response(trace_id, payload.action_id, ToolResult(**result))
     else:
         error = str(result.get("error") or "tool_failed")
         pending_store.fail_action(payload.action_id, result, error)
-        status = STATUS_FAILED
-        message = "failed"
-
-    return ApproveResponse(
-        trace_id=trace_id or "",
-        action_id=payload.action_id,
-        approved=True,
-        status=status,
-        message=message,
-        executed_actions=[ToolResult(**result)],
-        pending_actions=[],
-    )
+        return _failed_response(trace_id, payload.action_id, ToolResult(**result))
 
 
 def _tool_result_from_record(record) -> ToolResult | None:
@@ -208,6 +207,50 @@ def _fallback_tool_result(record) -> ToolResult:
     tool = str(record.action.get("tool", ""))
     error = record.error or "failed"
     return ToolResult(tool=tool, ok=False, output="", error=error)
+
+
+def _running_response(trace_id: str | None, action_id: str) -> ApproveResponse:
+    return ApproveResponse(
+        trace_id=trace_id or "",
+        action_id=action_id,
+        approved=True,
+        status=STATUS_RUNNING,
+        message="running",
+        executed_actions=[],
+        pending_actions=[],
+    )
+
+
+def _completed_response(
+    trace_id: str | None,
+    action_id: str,
+    result: ToolResult,
+) -> ApproveResponse:
+    return ApproveResponse(
+        trace_id=trace_id or "",
+        action_id=action_id,
+        approved=True,
+        status=STATUS_COMPLETED,
+        message="completed",
+        executed_actions=[result],
+        pending_actions=[],
+    )
+
+
+def _failed_response(
+    trace_id: str | None,
+    action_id: str,
+    result: ToolResult,
+) -> ApproveResponse:
+    return ApproveResponse(
+        trace_id=trace_id or "",
+        action_id=action_id,
+        approved=True,
+        status=STATUS_FAILED,
+        message="failed",
+        executed_actions=[result],
+        pending_actions=[],
+    )
 
 
 def _is_stale(started_at: str | None) -> bool:

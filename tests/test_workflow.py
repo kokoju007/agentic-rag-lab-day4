@@ -5,7 +5,9 @@ from app.main import app
 from app.pending_store import (
     STATUS_APPROVED,
     STATUS_COMPLETED,
+    STATUS_FAILED,
     STATUS_PENDING,
+    STATUS_REJECTED,
     STATUS_RUNNING,
     PendingActionStore,
 )
@@ -225,3 +227,141 @@ async def test_approve_legacy_approved_recovery(monkeypatch, tmp_path) -> None:
     payload = response.json()
     assert payload["status"] == STATUS_COMPLETED
     assert calls["count"] == 1
+
+
+@pytest.mark.anyio
+async def test_approve_failed_start_action_no_retry(monkeypatch, tmp_path) -> None:
+    from app import main
+
+    store = PendingActionStore(db_path=str(tmp_path / "pending_actions.db"))
+    monkeypatch.setattr(main, "pending_store", store)
+
+    calls = {"count": 0}
+
+    def fake_run_tool(tool: str, args: dict[str, str]) -> dict[str, object]:
+        calls["count"] += 1
+        return {"tool": tool, "ok": True, "output": "done"}
+
+    monkeypatch.setattr(main, "run_tool", fake_run_tool)
+
+    action = {
+        "action_id": "action-5",
+        "tool": "notify",
+        "args": {"channel": "ops", "message": "ping"},
+        "risk": "high",
+        "rationale": "test",
+    }
+    store.save_pending("trace-5", [action])
+
+    def start_action_stub(action_id: str, approved_by: str, allowed: list[str]) -> bool:
+        store.fail_action(
+            action_id,
+            {"tool": "notify", "ok": False, "output": "", "error": "boom"},
+            "boom",
+        )
+        return False
+
+    monkeypatch.setattr(store, "start_action", start_action_stub)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/approve",
+            json={"action_id": "action-5", "approved_by": "tester"},
+        )
+
+    payload = response.json()
+    assert payload["status"] == STATUS_FAILED
+    assert calls["count"] == 0
+
+
+@pytest.mark.anyio
+async def test_approve_failed_start_action_retry_executes(monkeypatch, tmp_path) -> None:
+    from app import main
+
+    store = PendingActionStore(db_path=str(tmp_path / "pending_actions.db"))
+    monkeypatch.setattr(main, "pending_store", store)
+
+    calls = {"count": 0}
+
+    def fake_run_tool(tool: str, args: dict[str, str]) -> dict[str, object]:
+        calls["count"] += 1
+        return {"tool": tool, "ok": True, "output": "done"}
+
+    monkeypatch.setattr(main, "run_tool", fake_run_tool)
+
+    action = {
+        "action_id": "action-6",
+        "tool": "notify",
+        "args": {"channel": "ops", "message": "ping"},
+        "risk": "high",
+        "rationale": "test",
+    }
+    store.save_pending("trace-6", [action])
+    original_start = store.start_action
+
+    def start_action_stub(action_id: str, approved_by: str, allowed: list[str]) -> bool:
+        if allowed == [STATUS_FAILED]:
+            return original_start(action_id, approved_by, allowed)
+        store.fail_action(
+            action_id,
+            {"tool": "notify", "ok": False, "output": "", "error": "boom"},
+            "boom",
+        )
+        return False
+
+    monkeypatch.setattr(store, "start_action", start_action_stub)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/approve",
+            json={"action_id": "action-6", "approved_by": "tester", "retry": True},
+        )
+
+    payload = response.json()
+    assert payload["status"] == STATUS_COMPLETED
+    assert calls["count"] == 1
+
+
+@pytest.mark.anyio
+async def test_approve_reject_does_not_execute(monkeypatch, tmp_path) -> None:
+    from app import main
+
+    store = PendingActionStore(db_path=str(tmp_path / "pending_actions.db"))
+    monkeypatch.setattr(main, "pending_store", store)
+
+    calls = {"count": 0}
+
+    def fake_run_tool(tool: str, args: dict[str, str]) -> dict[str, object]:
+        calls["count"] += 1
+        return {"tool": tool, "ok": True, "output": "done"}
+
+    monkeypatch.setattr(main, "run_tool", fake_run_tool)
+
+    action = {
+        "action_id": "action-7",
+        "tool": "notify",
+        "args": {"channel": "ops", "message": "ping"},
+        "risk": "high",
+        "rationale": "test",
+    }
+    store.save_pending("trace-7", [action])
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=main.app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/approve",
+            json={"action_id": "action-7", "approved_by": "tester", "approve": False},
+        )
+
+    payload = response.json()
+    assert payload["status"] == STATUS_REJECTED
+    assert payload["approved"] is False
+    assert calls["count"] == 0

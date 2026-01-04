@@ -151,6 +151,26 @@ class PendingActionStore:
                 (STATUS_REJECTED, approved_by, approved_at, trace_id, STATUS_PENDING),
             )
 
+    def reject_action(self, action_id: str, approved_by: str) -> None:
+        approved_at = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE pending_actions
+                SET status = ?, approved_by = ?, approved_at = ?
+                WHERE id = ? AND status IN (?, ?, ?)
+                """,
+                (
+                    STATUS_REJECTED,
+                    approved_by,
+                    approved_at,
+                    action_id,
+                    STATUS_PENDING,
+                    STATUS_RUNNING,
+                    STATUS_APPROVED,
+                ),
+            )
+
     def start_action(
         self,
         action_id: str,
