@@ -24,7 +24,7 @@ class HumanReview(BaseModel):
 class Action(BaseModel):
     action_id: str
     tool: str
-    args: dict[str, str]
+    args: dict[str, object]
     risk: Literal["low", "medium", "high"]
     rationale: str
 
@@ -60,6 +60,7 @@ class AskResponse(BaseModel):
 class ApproveRequest(BaseModel):
     trace_id: str
     approve: bool
+    approved_by: str
 
 
 class ApproveResponse(BaseModel):

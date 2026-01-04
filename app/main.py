@@ -8,7 +8,13 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 
 from app.ask_logic import build_ask_outcome
-from app.pending_store import PendingActionStore
+from app.pending_store import (
+    STATUS_APPROVED,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    PendingActionStore,
+)
 from app.schemas import ApproveRequest, ApproveResponse, AskRequest, AskResponse, ToolResult
 from tools.registry import run_tool
 
@@ -66,30 +72,70 @@ def ask(payload: AskRequest, request: Request) -> AskResponse:
 
 @app.post("/approve", response_model=ApproveResponse)
 def approve(payload: ApproveRequest) -> ApproveResponse:
-    entry = pending_store.get_entry(payload.trace_id)
-    pending_actions = entry.pending_actions if entry else []
+    records = pending_store.list_actions(payload.trace_id)
+    pending_actions = [record.action for record in records if record.status == STATUS_PENDING]
 
     if not payload.approve:
-        pending_store.delete(payload.trace_id)
+        pending_store.reject_pending(payload.trace_id, payload.approved_by)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "approval",
+                    "trace_id": payload.trace_id,
+                    "approved": False,
+                    "approved_by": payload.approved_by,
+                    "pending_count": len(pending_actions),
+                },
+                ensure_ascii=False,
+            )
+        )
         return ApproveResponse(
             trace_id=payload.trace_id,
             approved=False,
-            message="취소됨",
+            message="rejected",
             executed_actions=[],
             pending_actions=pending_actions,
         )
 
     executed_actions: list[ToolResult] = []
-    for action in pending_actions:
-        action_id = str(action.get("action_id", ""))
-        if entry and action_id in entry.executed_ids:
-            continue
-        result = run_tool(str(action.get("tool", "")), dict(action.get("args", {})))
-        executed_actions.append(ToolResult(**result))
-        if entry:
-            pending_store.mark_executed(payload.trace_id, action_id)
+    for record in records:
+        if record.status in {STATUS_COMPLETED, STATUS_FAILED, STATUS_APPROVED} and record.result:
+            executed_actions.append(ToolResult(**record.result))
 
-    pending_store.delete(payload.trace_id)
+    pending_records = [record for record in records if record.status == STATUS_PENDING]
+    if pending_records:
+        pending_store.approve_pending(payload.trace_id, payload.approved_by)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "approval",
+                    "trace_id": payload.trace_id,
+                    "approved": True,
+                    "approved_by": payload.approved_by,
+                    "pending_count": len(pending_records),
+                },
+                ensure_ascii=False,
+            )
+        )
+        for record in pending_records:
+            action = record.action
+            tool = str(action.get("tool", ""))
+            args = dict(action.get("args", {}))
+            try:
+                result = run_tool(tool, args)
+            except Exception as exc:
+                error = str(exc)
+                result = {"tool": tool, "ok": False, "output": "", "error": error}
+                pending_store.fail_action(record.action_id, result, error)
+                executed_actions.append(ToolResult(**result))
+                continue
+            if result.get("ok", False):
+                pending_store.complete_action(record.action_id, result)
+            else:
+                error = str(result.get("error") or "tool_failed")
+                pending_store.fail_action(record.action_id, result, error)
+            executed_actions.append(ToolResult(**result))
+
     return ApproveResponse(
         trace_id=payload.trace_id,
         approved=True,

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 from typing import Any, Callable
+
+import httpx
 
 ToolResult = dict[str, Any]
 ToolFn = Callable[[dict[str, Any]], ToolResult]
@@ -44,12 +48,30 @@ def restart_service(args: dict[str, Any]) -> ToolResult:
     )
 
 
+def http_post(args: dict[str, Any]) -> ToolResult:
+    url = args.get("url") or os.getenv("WEBHOOK_URL")
+    if not url:
+        return _result("http_post", False, "", "missing_url")
+    payload = args.get("payload", {})
+    headers = args.get("headers")
+    try:
+        with httpx.Client() as client:
+            response = client.post(url, json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        return _result("http_post", False, "", str(exc))
+    output = json.dumps({"status_code": response.status_code, "body": response.text})
+    ok = 200 <= response.status_code < 300
+    error = None if ok else f"status_{response.status_code}"
+    return _result("http_post", ok, output, error)
+
+
 TOOL_REGISTRY: dict[str, ToolFn] = {
     "kb_search": kb_search,
     "create_ticket": create_ticket,
     "generate_runbook": generate_runbook,
     "notify": notify,
     "restart_service": restart_service,
+    "http_post": http_post,
 }
 
 

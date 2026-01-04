@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.main import app
+from app.pending_store import PendingActionStore
 
 transport = httpx.ASGITransport(app=app)
 
@@ -46,7 +47,7 @@ async def test_workflow_high_risk_requires_approval_and_executes_on_approve() ->
 
         approve_response = await client.post(
             "/approve",
-            json={"trace_id": trace_id, "approve": True},
+            json={"trace_id": trace_id, "approve": True, "approved_by": "tester"},
         )
         assert approve_response.status_code == 200
         approve_payload = approve_response.json()
@@ -56,3 +57,41 @@ async def test_workflow_high_risk_requires_approval_and_executes_on_approve() ->
             action["tool"] == "restart_service" and action["ok"] is True
             for action in approve_payload["executed_actions"]
         )
+
+
+@pytest.mark.anyio
+async def test_approve_is_idempotent(monkeypatch, tmp_path) -> None:
+    from app import main
+
+    store = PendingActionStore(db_path=str(tmp_path / "pending_actions.db"))
+    monkeypatch.setattr(main, "pending_store", store)
+
+    calls = {"count": 0}
+
+    def fake_run_tool(tool: str, args: dict[str, str]) -> dict[str, object]:
+        calls["count"] += 1
+        return {"tool": tool, "ok": True, "output": "done"}
+
+    monkeypatch.setattr(main, "run_tool", fake_run_tool)
+
+    action = {
+        "action_id": "action-1",
+        "tool": "notify",
+        "args": {"channel": "ops", "message": "ping"},
+        "risk": "high",
+        "rationale": "test",
+    }
+    store.save_pending("trace-1", [action])
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=main.app),
+        base_url="http://test",
+    ) as client:
+        payload = {"trace_id": "trace-1", "approve": True, "approved_by": "tester"}
+        first = await client.post("/approve", json=payload)
+        second = await client.post("/approve", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls["count"] == 1
+    assert first.json()["executed_actions"] == second.json()["executed_actions"]
