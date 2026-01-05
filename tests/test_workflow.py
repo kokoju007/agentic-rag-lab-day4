@@ -46,6 +46,7 @@ async def test_workflow_http_post_requires_approval_for_operator() -> None:
     pending = payload["workflow"]["pending_actions"]
     assert any(action["tool"] == "http_post" for action in pending)
     assert pending[0]["policy"]["allowed"] is True
+    assert pending[0]["args"]["url"] == "https://example.com"
 
 
 @pytest.mark.anyio

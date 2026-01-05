@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, Response
 
 from app.ask_logic import build_ask_outcome
+from app.normalization import normalize_http_post_args
 from app.pending_store import (
     STATUS_APPROVED,
     STATUS_COMPLETED,
@@ -18,7 +19,6 @@ from app.pending_store import (
     STATUS_RUNNING,
     PendingActionStore,
 )
-from app.normalization import normalize_http_post_args
 from app.policy import ActorRole, evaluate_tool_access, resolve_actor
 from app.schemas import ApproveRequest, ApproveResponse, AskRequest, AskResponse, ToolResult
 from tools.registry import run_tool
