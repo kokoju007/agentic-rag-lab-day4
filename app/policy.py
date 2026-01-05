@@ -81,6 +81,10 @@ def evaluate_tool_access(
     trace_id: str | None = None,
 ) -> PolicyDecision:
     rule = _resolve_rule(tool)
+    if rule is None:
+        decision = _decision(allowed=False, reason="no_policy")
+        _log_decision(actor, tool, decision, trace_id)
+        return decision
     if ROLE_ORDER.get(actor.role, 0) < ROLE_ORDER.get(rule.min_role, 0):
         decision = _decision(
             allowed=False,
@@ -110,7 +114,7 @@ def decision_entry(action_id: str, tool: str, decision: PolicyDecision) -> dict[
     return {"action_id": action_id, "tool": tool, "decision": decision.to_dict()}
 
 
-def _resolve_rule(tool: str) -> PolicyRule:
+def _resolve_rule(tool: str) -> PolicyRule | None:
     policies = _load_tool_policy_overrides()
     if tool in policies:
         return policies[tool]
@@ -120,7 +124,15 @@ def _resolve_rule(tool: str) -> PolicyRule:
             min_role=ActorRole.operator,
             allowed_domains=_load_allowed_domains(),
         )
-    return PolicyRule(min_role=ActorRole.viewer)
+    if tool in {
+        "kb_search",
+        "create_ticket",
+        "generate_runbook",
+        "notify",
+        "restart_service",
+    }:
+        return PolicyRule(min_role=ActorRole.viewer)
+    return None
 
 
 def _load_allowed_domains() -> set[str] | None:

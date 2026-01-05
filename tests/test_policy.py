@@ -35,3 +35,11 @@ def test_policy_override_rules(monkeypatch) -> None:
     assert decision.allowed is False
     assert decision.reason == "role_required:admin"
     assert ActorRole.from_value("admin") == ActorRole.admin
+
+
+def test_policy_denies_unknown_tool(monkeypatch) -> None:
+    monkeypatch.delenv("TOOL_POLICY_RULES_JSON", raising=False)
+    actor = resolve_actor("user-5", "admin")
+    decision = evaluate_tool_access(actor, "some_new_tool", {})
+    assert decision.allowed is False
+    assert decision.reason == "no_policy"
