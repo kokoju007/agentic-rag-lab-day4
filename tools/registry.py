@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
+import time
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 import httpx
 
@@ -49,20 +53,118 @@ def restart_service(args: dict[str, Any]) -> ToolResult:
 
 
 def http_post(args: dict[str, Any]) -> ToolResult:
-    url = args.get("url") or os.getenv("WEBHOOK_URL")
+    url = str(args.get("url") or os.getenv("WEBHOOK_URL") or "")
     if not url:
         return _result("http_post", False, "", "missing_url")
+
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    allow_insecure = os.getenv("ALLOW_INSECURE_HTTP", "").lower() == "true"
+    if scheme not in {"https", "http"}:
+        return _result("http_post", False, "", "invalid_scheme")
+    if scheme == "http" and not allow_insecure:
+        return _result("http_post", False, "", "insecure_http_disallowed")
+
+    hostname = parsed.hostname
+    if not hostname:
+        return _result("http_post", False, "", "missing_hostname")
+
+    allowed_domains = _parse_allowed_domains()
+    if allowed_domains and not _domain_allowed(hostname, allowed_domains):
+        return _result("http_post", False, "", "domain_not_allowed")
+
+    ip_blocked = _is_blocked_hostname(hostname, parsed.port or (443 if scheme == "https" else 80))
+    if ip_blocked:
+        return _result("http_post", False, "", ip_blocked)
+
     payload = args.get("payload", {})
-    headers = args.get("headers")
     try:
-        with httpx.Client() as client:
+        payload_bytes = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        return _result("http_post", False, "", "invalid_payload")
+    max_payload = int(os.getenv("TOOL_HTTP_POST_MAX_PAYLOAD_BYTES", "65536"))
+    if len(payload_bytes) > max_payload:
+        return _result("http_post", False, "", "payload_too_large")
+
+    headers = args.get("headers")
+    if headers is not None:
+        if not isinstance(headers, dict):
+            return _result("http_post", False, "", "invalid_headers")
+        if any(str(key).lower() == "host" for key in headers.keys()):
+            return _result("http_post", False, "", "host_header_disallowed")
+        headers = {str(k): str(v) for k, v in headers.items()}
+
+    timeout_seconds = float(os.getenv("TOOL_HTTP_POST_TIMEOUT_SECONDS", "10"))
+    max_response_bytes = int(os.getenv("TOOL_HTTP_POST_MAX_RESPONSE_BYTES", "4096"))
+    start = time.perf_counter()
+    try:
+        with httpx.Client(timeout=timeout_seconds, follow_redirects=False) as client:
             response = client.post(url, json=payload, headers=headers)
     except httpx.HTTPError as exc:
         return _result("http_post", False, "", str(exc))
-    output = json.dumps({"status_code": response.status_code, "body": response.text})
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    body_bytes = response.content[:max_response_bytes]
+    truncated_body = body_bytes.decode(response.encoding or "utf-8", errors="replace")
+    output = json.dumps(
+        {
+            "status_code": response.status_code,
+            "truncated_body": truncated_body,
+            "elapsed_ms": elapsed_ms,
+        },
+        ensure_ascii=False,
+    )
     ok = 200 <= response.status_code < 300
     error = None if ok else f"status_{response.status_code}"
     return _result("http_post", ok, output, error)
+
+
+def _parse_allowed_domains() -> set[str]:
+    raw = os.getenv("TOOL_HTTP_POST_ALLOWED_DOMAINS", "").strip()
+    if not raw:
+        return set()
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def _domain_allowed(hostname: str, allowed_domains: set[str]) -> bool:
+    normalized = hostname.lower().strip(".")
+    for domain in allowed_domains:
+        domain = domain.strip(".")
+        if normalized == domain or normalized.endswith(f".{domain}"):
+            return True
+    return False
+
+
+def _is_blocked_hostname(hostname: str, port: int) -> str | None:
+    try:
+        results = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except OSError:
+        return "dns_resolution_failed"
+    for _, _, _, _, sockaddr in results:
+        ip = sockaddr[0]
+        try:
+            ip_addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return "invalid_ip"
+        if _is_blocked_ip(ip_addr):
+            return "blocked_ip"
+    return None
+
+
+def _is_blocked_ip(ip_addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return any(
+        [
+            ip_addr.is_private,
+            ip_addr.is_loopback,
+            ip_addr.is_link_local,
+            ip_addr.is_multicast,
+            ip_addr.is_reserved,
+            ip_addr.is_unspecified,
+        ]
+    )
 
 
 TOOL_REGISTRY: dict[str, ToolFn] = {

@@ -17,7 +17,14 @@ class DocSearchAgent:
         self._docs_path = docs_path or Path("docs")
         self._retriever = retriever or TfidfRetriever(root=str(self._docs_path))
 
-    def run(self, question: str) -> AgentResult:
+    def run(
+        self,
+        question: str,
+        actor: object | None = None,
+        trace_id: str | None = None,
+    ) -> AgentResult:
+        _ = actor
+        _ = trace_id
         hits = self._retriever.search(question, top_k=5)
         evidence = [self._format_hit(hit) for hit in hits]
         confidence = hits[0].score if hits else 0.0

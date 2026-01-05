@@ -17,15 +17,33 @@ class Orchestrator:
         self._direct_answer = direct_answer or DirectAnswerAgent()
         self._workflow = workflow or WorkflowAgent()
 
-    def route(self, question: str) -> AgentResult:
-        return self.route_with_choice(question)[1]
+    def route(
+        self,
+        question: str,
+        actor: object | None = None,
+        trace_id: str | None = None,
+    ) -> AgentResult:
+        return self.route_with_choice(question, actor=actor, trace_id=trace_id)[1]
 
-    def route_with_choice(self, question: str) -> tuple[str, AgentResult]:
+    def route_with_choice(
+        self,
+        question: str,
+        actor: object | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[str, AgentResult]:
         if self._is_action_request(question):
-            return self._workflow.name, self._workflow.run(question)
+            return self._workflow.name, self._workflow.run(question, actor=actor, trace_id=trace_id)
         if self._is_doc_question(question):
-            return self._doc_search.name, self._doc_search.run(question)
-        return self._direct_answer.name, self._direct_answer.run(question)
+            return self._doc_search.name, self._doc_search.run(
+                question,
+                actor=actor,
+                trace_id=trace_id,
+            )
+        return self._direct_answer.name, self._direct_answer.run(
+            question,
+            actor=actor,
+            trace_id=trace_id,
+        )
 
     def chosen_agent(self, question: str) -> str:
         return self.route_with_choice(question)[0]
@@ -63,6 +81,8 @@ class Orchestrator:
 
     def _is_action_request(self, question: str) -> bool:
         lowered = question.lower()
+        if "webhook" in lowered or "http post" in lowered or "http_post" in lowered:
+            return True
         if "restart" in lowered or "재시작" in question:
             return True
         if "notify" in lowered or "알림" in question:

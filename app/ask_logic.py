@@ -9,6 +9,7 @@ from agents.guardrails import evaluate_question
 from agents.orchestrator import Orchestrator
 from agents.usage import normalize_usage
 from app.config import RETRIEVAL_CONFIDENCE_THRESHOLD
+from app.policy import Actor, resolve_actor
 from app.schemas import AskResponse, HumanReview, Usage, Workflow
 
 _LOW_CONFIDENCE_ACTIONS = [
@@ -125,7 +126,7 @@ def _resolve_build_marker() -> str:
 BUILD_MARKER = _resolve_build_marker()
 
 
-def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
+def build_ask_outcome(question: str, trace_id: str, actor: Actor | None = None) -> AskOutcome:
     build_marker = BUILD_MARKER
     guardrail = evaluate_question(question)
     if guardrail["blocked"]:
@@ -145,7 +146,12 @@ def build_ask_outcome(question: str, trace_id: str) -> AskOutcome:
         return AskOutcome(response=response, chosen_agent="guardrail", evidence_count=0, usage=None)
 
     orchestrator = Orchestrator()
-    chosen_agent, result = orchestrator.route_with_choice(question)
+    resolved_actor = actor or resolve_actor(None, None)
+    chosen_agent, result = orchestrator.route_with_choice(
+        question,
+        actor=resolved_actor,
+        trace_id=trace_id,
+    )
     usage_dict = normalize_usage(result.usage)
     usage = Usage(**usage_dict) if usage_dict else None
     human_review = _human_review_not_needed()

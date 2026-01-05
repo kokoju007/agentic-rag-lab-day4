@@ -190,7 +190,7 @@ class TfidfRetriever:
         for score, i in scored[:top_k]:
             ch = self._chunks[i]
             hits.append(
-    SearchHit(score=score, doc_id=ch.doc_id, chunk_id=ch.chunk_id, text=ch.text)
-)
+                SearchHit(score=score, doc_id=ch.doc_id, chunk_id=ch.chunk_id, text=ch.text)
+            )
 
         return hits

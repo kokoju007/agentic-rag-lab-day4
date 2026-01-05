@@ -1,33 +1,55 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from agents.base import AgentResult
+from app.policy import Actor, decision_entry, evaluate_tool_access, resolve_actor
 from tools.registry import run_tool
 
-ActionDict = dict[str, str | dict[str, str]]
+ActionDict = dict[str, object]
 
 
 class WorkflowAgent:
     name = "workflow"
 
-    def run(self, question: str) -> AgentResult:
+    def run(
+        self,
+        question: str,
+        actor: Actor | None = None,
+        trace_id: str | None = None,
+    ) -> AgentResult:
         plan, actions = self._build_plan_and_actions(question)
-        requires_approval = any(action["risk"] == "high" for action in actions)
+        resolved_actor = actor if isinstance(actor, Actor) else resolve_actor(None, None)
         pending_actions = []
         executed_actions = []
+        policy_decisions = []
+        denied_actions = 0
 
         for action in actions:
+            tool = str(action["tool"])
+            args = dict(action.get("args", {}))
+            decision = evaluate_tool_access(resolved_actor, tool, args, trace_id=trace_id)
+            action["policy"] = decision.to_dict()
+            policy_decisions.append(decision_entry(action["action_id"], tool, decision))
+            if not decision.allowed:
+                denied_actions += 1
+                continue
+
             if action["risk"] == "high":
                 pending_actions.append(action)
                 continue
-            result = run_tool(action["tool"], action["args"])
+            result = run_tool(tool, args)
             executed_actions.append(result)
+
+        requires_approval = any(action["risk"] == "high" for action in pending_actions)
 
         if requires_approval:
             answer = "Approval required before executing high-risk actions."
-        elif actions:
+        elif executed_actions:
             answer = "Requested actions executed."
+        elif denied_actions:
+            answer = "Requested actions were blocked by policy."
         else:
             answer = "No actionable steps detected."
 
@@ -36,6 +58,7 @@ class WorkflowAgent:
             "requires_approval": requires_approval,
             "pending_actions": pending_actions,
             "executed_actions": executed_actions,
+            "policy_decisions": policy_decisions,
         }
         return AgentResult(answer=answer, evidence=[], workflow=workflow)
 
@@ -70,6 +93,19 @@ class WorkflowAgent:
                     rationale="User requested notification.",
                 )
             )
+        if "webhook" in lowered or "http post" in lowered or "http_post" in lowered:
+            url = self._extract_url(question)
+            args: dict[str, object] = {"payload": {"message": question}}
+            if url:
+                args["url"] = url
+            actions.append(
+                self._action(
+                    tool="http_post",
+                    args=args,
+                    risk="high",
+                    rationale="User requested webhook delivery.",
+                )
+            )
         if "restart" in lowered or "재시작" in question:
             risk = "high"
             is_production = "prod" in lowered or "production" in lowered or "프로덕션" in question
@@ -99,10 +135,10 @@ class WorkflowAgent:
     def _action(
         self,
         tool: str,
-        args: dict[str, str],
+        args: dict[str, object],
         risk: str,
         rationale: str,
-    ) -> dict[str, str | dict[str, str]]:
+    ) -> dict[str, object]:
         return {
             "action_id": str(uuid4()),
             "tool": tool,
@@ -110,3 +146,9 @@ class WorkflowAgent:
             "risk": risk,
             "rationale": rationale,
         }
+
+    def _extract_url(self, question: str) -> str | None:
+        match = re.search(r"https?://\\S+", question)
+        if not match:
+            return None
+        return match.group(0).rstrip(").,]")
