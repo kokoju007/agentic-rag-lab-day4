@@ -18,6 +18,7 @@ from app.pending_store import (
     STATUS_RUNNING,
     PendingActionStore,
 )
+from app.normalization import normalize_http_post_args
 from app.policy import ActorRole, evaluate_tool_access, resolve_actor
 from app.schemas import ApproveRequest, ApproveResponse, AskRequest, AskResponse, ToolResult
 from tools.registry import run_tool
@@ -138,6 +139,8 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
 
     tool = str(record.action.get("tool", ""))
     args = dict(record.action.get("args", {}))
+    if tool == "http_post":
+        args = normalize_http_post_args(None, args)
     decision = evaluate_tool_access(actor, tool, args, trace_id=trace_id)
     if not decision.allowed:
         pending_store.reject_action(payload.action_id, payload.approved_by, actor.role.value)

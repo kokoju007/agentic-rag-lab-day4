@@ -49,6 +49,21 @@ async def test_workflow_http_post_requires_approval_for_operator() -> None:
 
 
 @pytest.mark.anyio
+async def test_workflow_http_post_normalizes_args() -> None:
+    question = 'Send webhook url=https://example.com payload={"ping":"pong"}'
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/ask",
+            json={"question": question, "actor_id": "op-1", "actor_role": "operator"},
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    pending = payload["workflow"]["pending_actions"]
+    assert pending[0]["args"]["url"] == "https://example.com"
+    assert pending[0]["args"]["payload"] == {"ping": "pong"}
+
+
+@pytest.mark.anyio
 async def test_workflow_http_post_blocked_for_viewer() -> None:
     question = "Send webhook to https://example.com for deployment"
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -136,6 +151,44 @@ async def test_approve_is_idempotent(monkeypatch, tmp_path) -> None:
     assert second.status_code == 200
     assert calls["count"] == 1
     assert first.json()["executed_actions"] == second.json()["executed_actions"]
+
+
+@pytest.mark.anyio
+async def test_approve_http_post_uses_normalized_args(monkeypatch, tmp_path) -> None:
+    from app import main
+
+    store = PendingActionStore(db_path=str(tmp_path / "pending_actions.db"))
+    monkeypatch.setattr(main, "pending_store", store)
+
+    captured: dict[str, object] = {}
+
+    def fake_run_tool(tool: str, args: dict[str, object]) -> dict[str, object]:
+        captured["args"] = args
+        return {"tool": tool, "ok": True, "output": "done"}
+
+    monkeypatch.setattr(main, "run_tool", fake_run_tool)
+
+    question = 'Send webhook url=https://example.com payload={"ping":"pong"}'
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=main.app),
+        base_url="http://test",
+    ) as client:
+        ask_response = await client.post(
+            "/ask",
+            json={"question": question, "actor_id": "op-1", "actor_role": "operator"},
+        )
+        pending = ask_response.json()["workflow"]["pending_actions"]
+        action_id = pending[0]["action_id"]
+        approve_response = await client.post(
+            "/approve",
+            json={"action_id": action_id, "approved_by": "tester", "approved_role": "operator"},
+        )
+
+    assert approve_response.status_code == 200
+    payload = approve_response.json()
+    assert payload["status"] == STATUS_COMPLETED
+    assert captured["args"]["url"] == "https://example.com"
+    assert captured["args"]["payload"] == {"ping": "pong"}
 
 
 @pytest.mark.anyio

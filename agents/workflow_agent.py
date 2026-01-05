@@ -4,6 +4,7 @@ import re
 from uuid import uuid4
 
 from agents.base import AgentResult
+from app.normalization import normalize_http_post_args
 from app.policy import Actor, decision_entry, evaluate_tool_access, resolve_actor
 from tools.registry import run_tool
 
@@ -29,6 +30,9 @@ class WorkflowAgent:
         for action in actions:
             tool = str(action["tool"])
             args = dict(action.get("args", {}))
+            if tool == "http_post":
+                args = normalize_http_post_args(question, args)
+                action["args"] = args
             decision = evaluate_tool_access(resolved_actor, tool, args, trace_id=trace_id)
             action["policy"] = decision.to_dict()
             policy_decisions.append(decision_entry(action["action_id"], tool, decision))
