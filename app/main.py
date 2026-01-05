@@ -18,6 +18,7 @@ from app.pending_store import (
     STATUS_RUNNING,
     PendingActionStore,
 )
+from app.policy import ActorRole, evaluate_tool_access, resolve_actor
 from app.schemas import ApproveRequest, ApproveResponse, AskRequest, AskResponse, ToolResult
 from tools.registry import run_tool
 
@@ -61,7 +62,8 @@ def health() -> dict[str, str]:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(payload: AskRequest, request: Request) -> AskResponse:
-    outcome = build_ask_outcome(payload.question, request.state.trace_id)
+    actor = resolve_actor(payload.actor_id, payload.actor_role)
+    outcome = build_ask_outcome(payload.question, request.state.trace_id, actor=actor)
     request.state.chosen_agent = outcome.chosen_agent
     request.state.evidence_count = outcome.evidence_count
     request.state.usage = outcome.usage
@@ -79,6 +81,9 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
     record = pending_store.get_action(payload.action_id)
     if not record:
         raise HTTPException(status_code=404, detail="action_not_found")
+    actor = resolve_actor(payload.approved_by, payload.approved_role)
+    if actor.role not in {ActorRole.operator, ActorRole.admin}:
+        raise HTTPException(status_code=403, detail="insufficient_role")
 
     trace_id = record.trace_id
     logger.info(
@@ -89,13 +94,14 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
                 "action_id": payload.action_id,
                 "status": record.status,
                 "approved_by": payload.approved_by,
+                "approved_role": actor.role.value,
             },
             ensure_ascii=False,
         )
     )
 
     if not payload.approve:
-        pending_store.reject_action(payload.action_id, payload.approved_by)
+        pending_store.reject_action(payload.action_id, payload.approved_by, actor.role.value)
         return ApproveResponse(
             trace_id=trace_id or "",
             action_id=payload.action_id,
@@ -130,6 +136,21 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
             pending_actions=[],
         )
 
+    tool = str(record.action.get("tool", ""))
+    args = dict(record.action.get("args", {}))
+    decision = evaluate_tool_access(actor, tool, args, trace_id=trace_id)
+    if not decision.allowed:
+        pending_store.reject_action(payload.action_id, payload.approved_by, actor.role.value)
+        return ApproveResponse(
+            trace_id=trace_id or "",
+            action_id=payload.action_id,
+            approved=False,
+            status=STATUS_REJECTED,
+            message=f"policy_denied:{decision.reason}",
+            executed_actions=[],
+            pending_actions=[],
+        )
+
     started = False
     if record.status == STATUS_RUNNING:
         if not payload.force or not _is_stale(record.started_at):
@@ -137,18 +158,21 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
         started = pending_store.start_action(
             payload.action_id,
             payload.approved_by,
+            actor.role.value,
             [STATUS_RUNNING],
         )
     elif record.status in {STATUS_PENDING, STATUS_APPROVED}:
         started = pending_store.start_action(
             payload.action_id,
             payload.approved_by,
+            actor.role.value,
             [STATUS_PENDING, STATUS_APPROVED],
         )
     elif record.status == STATUS_FAILED and payload.retry:
         started = pending_store.start_action(
             payload.action_id,
             payload.approved_by,
+            actor.role.value,
             [STATUS_FAILED],
         )
 
@@ -167,20 +191,19 @@ def approve(payload: ApproveRequest) -> ApproveResponse:
                 started = pending_store.start_action(
                     payload.action_id,
                     payload.approved_by,
+                    actor.role.value,
                     [STATUS_FAILED],
                 )
             if latest.status == STATUS_APPROVED:
                 started = pending_store.start_action(
                     payload.action_id,
                     payload.approved_by,
+                    actor.role.value,
                     [STATUS_APPROVED],
                 )
         if not started:
             return _running_response(trace_id, payload.action_id)
 
-    action = record.action
-    tool = str(action.get("tool", ""))
-    args = dict(action.get("args", {}))
     try:
         result = run_tool(tool, args)
     except Exception as exc:

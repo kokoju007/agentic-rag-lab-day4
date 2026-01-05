@@ -4,9 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ActorRole = Literal["viewer", "operator", "admin"]
+
 
 class AskRequest(BaseModel):
     question: str = Field(..., description="User question to route and answer.")
+    actor_id: str | None = Field(default=None, description="Actor identifier.")
+    actor_role: ActorRole | None = Field(default=None, description="Actor role.")
 
 
 class Usage(BaseModel):
@@ -27,6 +31,21 @@ class Action(BaseModel):
     args: dict[str, object]
     risk: Literal["low", "medium", "high"]
     rationale: str
+    policy: dict[str, object] | None = None
+
+
+class PolicyDecision(BaseModel):
+    allowed: bool
+    reason: str
+    policy_id: str
+    policy_version: str
+    evaluated_at: str
+
+
+class PolicyDecisionEntry(BaseModel):
+    action_id: str
+    tool: str
+    decision: PolicyDecision
 
 
 class ToolResult(BaseModel):
@@ -41,6 +60,7 @@ class Workflow(BaseModel):
     requires_approval: bool
     pending_actions: list[Action]
     executed_actions: list[ToolResult]
+    policy_decisions: list[PolicyDecisionEntry] = Field(default_factory=list)
 
 
 class AskResponse(BaseModel):
@@ -60,6 +80,7 @@ class AskResponse(BaseModel):
 class ApproveRequest(BaseModel):
     action_id: str
     approved_by: str
+    approved_role: ActorRole | None = Field(default=None, description="Approver role.")
     approve: bool = True
     retry: bool = False
     force: bool = False

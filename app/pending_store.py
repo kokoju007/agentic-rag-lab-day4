@@ -28,6 +28,7 @@ class PendingActionRecord:
     action: dict[str, Any]
     created_at: str
     approved_by: str | None
+    approved_role: str | None
     approved_at: str | None
     started_at: str | None
     result: dict[str, Any] | None
@@ -76,7 +77,7 @@ class PendingActionStore:
             rows = conn.execute(
                 """
                 SELECT id, trace_id, status, action_json, created_at,
-                       approved_by, approved_at, started_at, result_json, error
+                       approved_by, approved_role, approved_at, started_at, result_json, error
                 FROM pending_actions
                 WHERE trace_id = ?
                 ORDER BY created_at ASC
@@ -93,6 +94,7 @@ class PendingActionStore:
                     action=json.loads(row["action_json"]) if row["action_json"] else {},
                     created_at=row["created_at"],
                     approved_by=row["approved_by"],
+                    approved_role=row["approved_role"],
                     approved_at=row["approved_at"],
                     started_at=row["started_at"],
                     result=json.loads(row["result_json"]) if row["result_json"] else None,
@@ -106,7 +108,7 @@ class PendingActionStore:
             row = conn.execute(
                 """
                 SELECT id, trace_id, status, action_json, created_at,
-                       approved_by, approved_at, started_at, result_json, error
+                       approved_by, approved_role, approved_at, started_at, result_json, error
                 FROM pending_actions
                 WHERE id = ?
                 """,
@@ -121,48 +123,64 @@ class PendingActionStore:
             action=json.loads(row["action_json"]) if row["action_json"] else {},
             created_at=row["created_at"],
             approved_by=row["approved_by"],
+            approved_role=row["approved_role"],
             approved_at=row["approved_at"],
             started_at=row["started_at"],
             result=json.loads(row["result_json"]) if row["result_json"] else None,
             error=row["error"],
         )
 
-    def approve_pending(self, trace_id: str, approved_by: str) -> None:
+    def approve_pending(self, trace_id: str, approved_by: str, approved_role: str | None) -> None:
         approved_at = _now_iso()
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE pending_actions
-                SET status = ?, approved_by = ?, approved_at = ?
+                SET status = ?, approved_by = ?, approved_role = ?, approved_at = ?
                 WHERE trace_id = ? AND status = ?
                 """,
-                (STATUS_APPROVED, approved_by, approved_at, trace_id, STATUS_PENDING),
+                (
+                    STATUS_APPROVED,
+                    approved_by,
+                    approved_role,
+                    approved_at,
+                    trace_id,
+                    STATUS_PENDING,
+                ),
             )
 
-    def reject_pending(self, trace_id: str, approved_by: str) -> None:
+    def reject_pending(self, trace_id: str, approved_by: str, approved_role: str | None) -> None:
         approved_at = _now_iso()
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE pending_actions
-                SET status = ?, approved_by = ?, approved_at = ?
+                SET status = ?, approved_by = ?, approved_role = ?, approved_at = ?
                 WHERE trace_id = ? AND status = ?
                 """,
-                (STATUS_REJECTED, approved_by, approved_at, trace_id, STATUS_PENDING),
+                (
+                    STATUS_REJECTED,
+                    approved_by,
+                    approved_role,
+                    approved_at,
+                    trace_id,
+                    STATUS_PENDING,
+                ),
             )
 
-    def reject_action(self, action_id: str, approved_by: str) -> None:
+    def reject_action(self, action_id: str, approved_by: str, approved_role: str | None) -> None:
         approved_at = _now_iso()
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE pending_actions
-                SET status = ?, approved_by = ?, approved_at = ?
+                SET status = ?, approved_by = ?, approved_role = ?, approved_at = ?
                 WHERE id = ? AND status IN (?, ?, ?)
                 """,
                 (
                     STATUS_REJECTED,
                     approved_by,
+                    approved_role,
                     approved_at,
                     action_id,
                     STATUS_PENDING,
@@ -175,6 +193,7 @@ class PendingActionStore:
         self,
         action_id: str,
         approved_by: str,
+        approved_role: str | None,
         allowed_statuses: list[str],
     ) -> bool:
         approved_at = _now_iso()
@@ -182,26 +201,33 @@ class PendingActionStore:
         placeholders = ",".join(["?"] * len(allowed_statuses))
         query = f"""
             UPDATE pending_actions
-            SET status = ?, approved_by = ?, approved_at = ?, started_at = ?
+            SET status = ?, approved_by = ?, approved_role = ?, approved_at = ?, started_at = ?
             WHERE id = ? AND status IN ({placeholders})
         """
-        params: list[str] = [STATUS_RUNNING, approved_by, approved_at, started_at, action_id]
+        params: list[str | None] = [
+            STATUS_RUNNING,
+            approved_by,
+            approved_role,
+            approved_at,
+            started_at,
+            action_id,
+        ]
         params.extend(allowed_statuses)
         with self._connect() as conn:
             result = conn.execute(query, params)
         return result.rowcount > 0
 
-    def refresh_running(self, action_id: str, approved_by: str) -> bool:
+    def refresh_running(self, action_id: str, approved_by: str, approved_role: str | None) -> bool:
         approved_at = _now_iso()
         started_at = approved_at
         with self._connect() as conn:
             result = conn.execute(
                 """
                 UPDATE pending_actions
-                SET approved_by = ?, approved_at = ?, started_at = ?
+                SET approved_by = ?, approved_role = ?, approved_at = ?, started_at = ?
                 WHERE id = ? AND status = ?
                 """,
-                (approved_by, approved_at, started_at, action_id, STATUS_RUNNING),
+                (approved_by, approved_role, approved_at, started_at, action_id, STATUS_RUNNING),
             )
         return result.rowcount > 0
 
@@ -247,6 +273,7 @@ class PendingActionStore:
                     action_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     approved_by TEXT,
+                    approved_role TEXT,
                     approved_at TEXT,
                     started_at TEXT,
                     result_json TEXT,
@@ -255,6 +282,7 @@ class PendingActionStore:
                 """
             )
             self._ensure_column(conn, "started_at", "TEXT")
+            self._ensure_column(conn, "approved_role", "TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)

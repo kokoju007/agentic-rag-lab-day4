@@ -17,4 +17,9 @@ class AgentResult:
 class Agent(Protocol):
     name: str
 
-    def run(self, question: str) -> AgentResult: ...
+    def run(
+        self,
+        question: str,
+        actor: object | None = None,
+        trace_id: str | None = None,
+    ) -> AgentResult: ...

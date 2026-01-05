@@ -28,9 +28,43 @@ async def test_workflow_low_risk_executes_ticket() -> None:
     assert payload["workflow"]["requires_approval"] is False
     assert payload["workflow"]["pending_actions"] == []
     executed = payload["workflow"]["executed_actions"]
+    assert any(action["tool"] == "create_ticket" for action in executed)
+
+
+@pytest.mark.anyio
+async def test_workflow_http_post_requires_approval_for_operator() -> None:
+    question = "Send webhook to https://example.com for deployment"
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/ask",
+            json={"question": question, "actor_id": "op-1", "actor_role": "operator"},
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["chosen_agent"] == "workflow"
+    assert payload["workflow"]["requires_approval"] is True
+    pending = payload["workflow"]["pending_actions"]
+    assert any(action["tool"] == "http_post" for action in pending)
+    assert pending[0]["policy"]["allowed"] is True
+
+
+@pytest.mark.anyio
+async def test_workflow_http_post_blocked_for_viewer() -> None:
+    question = "Send webhook to https://example.com for deployment"
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/ask",
+            json={"question": question, "actor_id": "viewer-1", "actor_role": "viewer"},
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["chosen_agent"] == "workflow"
+    assert payload["workflow"]["requires_approval"] is False
+    assert payload["workflow"]["pending_actions"] == []
+    decisions = payload["workflow"]["policy_decisions"]
     assert any(
-        action["tool"] == "create_ticket"
-        for action in executed
+        entry["tool"] == "http_post" and entry["decision"]["allowed"] is False
+        for entry in decisions
     )
 
 
@@ -47,15 +81,12 @@ async def test_workflow_high_risk_requires_approval_and_executes_on_approve() ->
         assert ask_payload["workflow"]["requires_approval"] is True
         assert ask_payload["workflow"]["executed_actions"] == []
         pending = ask_payload["workflow"]["pending_actions"]
-        assert any(
-            action["tool"] == "restart_service"
-            for action in pending
-        )
+        assert any(action["tool"] == "restart_service" for action in pending)
         action_id = pending[0]["action_id"]
 
         approve_response = await client.post(
             "/approve",
-            json={"action_id": action_id, "approved_by": "tester"},
+            json={"action_id": action_id, "approved_by": "tester", "approved_role": "operator"},
         )
         assert approve_response.status_code == 200
         approve_payload = approve_response.json()
@@ -97,7 +128,7 @@ async def test_approve_is_idempotent(monkeypatch, tmp_path) -> None:
         transport=httpx.ASGITransport(app=main.app),
         base_url="http://test",
     ) as client:
-        payload = {"action_id": action_id, "approved_by": "tester"}
+        payload = {"action_id": action_id, "approved_by": "tester", "approved_role": "operator"}
         first = await client.post("/approve", json=payload)
         second = await client.post("/approve", json=payload)
 
@@ -134,7 +165,7 @@ async def test_approve_marks_running_then_completed(monkeypatch, tmp_path) -> No
     ) as client:
         response = await client.post(
             "/approve",
-            json={"action_id": "action-2", "approved_by": "tester"},
+            json={"action_id": "action-2", "approved_by": "tester", "approved_role": "operator"},
         )
 
     assert response.status_code == 200
@@ -168,7 +199,7 @@ async def test_approve_running_does_not_reexecute(monkeypatch, tmp_path) -> None
         "rationale": "test",
     }
     store.save_pending("trace-3", [action])
-    store.start_action("action-3", "tester", [STATUS_PENDING])
+    store.start_action("action-3", "tester", "operator", [STATUS_PENDING])
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=main.app),
@@ -176,7 +207,7 @@ async def test_approve_running_does_not_reexecute(monkeypatch, tmp_path) -> None
     ) as client:
         response = await client.post(
             "/approve",
-            json={"action_id": "action-3", "approved_by": "tester"},
+            json={"action_id": "action-3", "approved_by": "tester", "approved_role": "operator"},
         )
 
     assert response.status_code == 200
@@ -220,7 +251,7 @@ async def test_approve_legacy_approved_recovery(monkeypatch, tmp_path) -> None:
     ) as client:
         response = await client.post(
             "/approve",
-            json={"action_id": "action-4", "approved_by": "tester"},
+            json={"action_id": "action-4", "approved_by": "tester", "approved_role": "operator"},
         )
 
     assert response.status_code == 200
@@ -253,7 +284,12 @@ async def test_approve_failed_start_action_no_retry(monkeypatch, tmp_path) -> No
     }
     store.save_pending("trace-5", [action])
 
-    def start_action_stub(action_id: str, approved_by: str, allowed: list[str]) -> bool:
+    def start_action_stub(
+        action_id: str,
+        approved_by: str,
+        approved_role: str | None,
+        allowed: list[str],
+    ) -> bool:
         store.fail_action(
             action_id,
             {"tool": "notify", "ok": False, "output": "", "error": "boom"},
@@ -269,7 +305,7 @@ async def test_approve_failed_start_action_no_retry(monkeypatch, tmp_path) -> No
     ) as client:
         response = await client.post(
             "/approve",
-            json={"action_id": "action-5", "approved_by": "tester"},
+            json={"action_id": "action-5", "approved_by": "tester", "approved_role": "operator"},
         )
 
     payload = response.json()
@@ -302,9 +338,14 @@ async def test_approve_failed_start_action_retry_executes(monkeypatch, tmp_path)
     store.save_pending("trace-6", [action])
     original_start = store.start_action
 
-    def start_action_stub(action_id: str, approved_by: str, allowed: list[str]) -> bool:
+    def start_action_stub(
+        action_id: str,
+        approved_by: str,
+        approved_role: str | None,
+        allowed: list[str],
+    ) -> bool:
         if allowed == [STATUS_FAILED]:
-            return original_start(action_id, approved_by, allowed)
+            return original_start(action_id, approved_by, approved_role, allowed)
         store.fail_action(
             action_id,
             {"tool": "notify", "ok": False, "output": "", "error": "boom"},
@@ -320,7 +361,12 @@ async def test_approve_failed_start_action_retry_executes(monkeypatch, tmp_path)
     ) as client:
         response = await client.post(
             "/approve",
-            json={"action_id": "action-6", "approved_by": "tester", "retry": True},
+            json={
+                "action_id": "action-6",
+                "approved_by": "tester",
+                "approved_role": "operator",
+                "retry": True,
+            },
         )
 
     payload = response.json()
@@ -358,7 +404,12 @@ async def test_approve_reject_does_not_execute(monkeypatch, tmp_path) -> None:
     ) as client:
         response = await client.post(
             "/approve",
-            json={"action_id": "action-7", "approved_by": "tester", "approve": False},
+            json={
+                "action_id": "action-7",
+                "approved_by": "tester",
+                "approved_role": "operator",
+                "approve": False,
+            },
         )
 
     payload = response.json()
