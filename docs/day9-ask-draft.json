@@ -1,0 +1,3 @@
+{
+  "question": "Create X thread draft. topic: Week 1 portfolio update. analysis: {\"summary\":\"Top positions count=3, concentration(top3)=78.0%, risk_mode=balanced.\",\"risk_checklist\":[\"Confirm liquidity for top positions.\"],\"scenarios\":{\"base\":\"Sideways rotation.\"},\"top_positions\":[{\"symbol\":\"BTC\"},{\"symbol\":\"ETH\"}]}"
+}

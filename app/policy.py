@@ -132,6 +132,8 @@ def _resolve_rule(tool: str) -> PolicyRule | None:
         "restart_service",
     }:
         return PolicyRule(min_role=ActorRole.viewer)
+    if tool in {"portfolio_rebalance_plan", "publish_draft"}:
+        return PolicyRule(min_role=ActorRole.operator)
     return None
 
 

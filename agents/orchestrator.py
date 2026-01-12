@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from agents.base import Agent, AgentResult
+from agents.content_creator_agent import ContentCreatorAgent
+from agents.crypto_analysis_agent import CryptoAnalysisAgent
 from agents.direct_answer_agent import DirectAnswerAgent
 from agents.doc_search_agent import DocSearchAgent
+from agents.portfolio_manager_workflow import PortfolioManagerWorkflow
 from agents.workflow_agent import WorkflowAgent
 
 
@@ -12,10 +15,16 @@ class Orchestrator:
         doc_search: Agent | None = None,
         direct_answer: Agent | None = None,
         workflow: Agent | None = None,
+        crypto_analysis: Agent | None = None,
+        content_creator: Agent | None = None,
+        portfolio_workflow: Agent | None = None,
     ) -> None:
         self._doc_search = doc_search or DocSearchAgent()
         self._direct_answer = direct_answer or DirectAnswerAgent()
         self._workflow = workflow or WorkflowAgent()
+        self._crypto_analysis = crypto_analysis or CryptoAnalysisAgent()
+        self._content_creator = content_creator or ContentCreatorAgent()
+        self._portfolio_workflow = portfolio_workflow or PortfolioManagerWorkflow()
 
     def route(
         self,
@@ -31,6 +40,21 @@ class Orchestrator:
         actor: object | None = None,
         trace_id: str | None = None,
     ) -> tuple[str, AgentResult]:
+        if self._is_portfolio_action_request(question):
+            return (
+                self._portfolio_workflow.name,
+                self._portfolio_workflow.run(question, actor=actor, trace_id=trace_id),
+            )
+        if self._is_content_request(question):
+            return (
+                self._content_creator.name,
+                self._content_creator.run(question, actor=actor, trace_id=trace_id),
+            )
+        if self._is_crypto_analysis_request(question):
+            return (
+                self._crypto_analysis.name,
+                self._crypto_analysis.run(question, actor=actor, trace_id=trace_id),
+            )
         if self._is_action_request(question):
             return self._workflow.name, self._workflow.run(question, actor=actor, trace_id=trace_id)
         if self._is_doc_question(question):
@@ -78,6 +102,41 @@ class Orchestrator:
             "incident",
         ]
         return any(keyword in lowered for keyword in doc_keywords)
+
+    def _is_crypto_analysis_request(self, question: str) -> bool:
+        lowered = question.lower()
+        primary = ["portfolio", "positions", "crypto"]
+        secondary = ["analysis", "analyze", "summary", "risk", "concentration"]
+        if any(keyword in lowered for keyword in primary):
+            return True
+        if any(keyword in lowered for keyword in secondary) and "positions" in lowered:
+            return True
+        return False
+
+    def _is_content_request(self, question: str) -> bool:
+        lowered = question.lower()
+        keywords = [
+            "draft",
+            "thread",
+            "tweet",
+            "write",
+            "create post",
+            "x post",
+            "content",
+        ]
+        return any(keyword in lowered for keyword in keywords)
+
+    def _is_portfolio_action_request(self, question: str) -> bool:
+        lowered = question.lower()
+        keywords = [
+            "rebalance",
+            "rebalancing",
+            "execute",
+            "publish",
+            "post now",
+            "trade",
+        ]
+        return any(keyword in lowered for keyword in keywords)
 
     def _is_action_request(self, question: str) -> bool:
         lowered = question.lower()
