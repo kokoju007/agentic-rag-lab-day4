@@ -27,7 +27,12 @@ class PortfolioManagerWorkflow:
         for action in actions:
             tool = str(action["tool"])
             args = dict(action.get("args", {}))
-            decision = evaluate_tool_access(resolved_actor, tool, args, trace_id=trace_id)
+            decision = evaluate_tool_access(
+                resolved_actor,
+                tool,
+                args,
+                trace_id=trace_id,
+            )
             action["policy"] = decision.to_dict()
             policy_decisions.append(decision_entry(action["action_id"], tool, decision))
             if not decision.allowed:
@@ -80,7 +85,9 @@ class PortfolioManagerWorkflow:
             )
 
         plan = ["Interpret request"]
-        plan.extend([f"Queue action for approval: {action['tool']}" for action in actions])
+        plan.extend(
+            [f"Queue action for approval: {action['tool']}" for action in actions]
+        )
         return plan, actions
 
     def _action(
@@ -99,7 +106,10 @@ class PortfolioManagerWorkflow:
         }
 
     def _extract_draft_id(self, question: str) -> str | None:
-        match = re.search(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", question)
+        match = re.search(
+            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+            question,
+        )
         if not match:
             return None
         return match.group(0)

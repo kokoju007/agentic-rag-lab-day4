@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from app.main import app
-from app.pending_store import PendingActionStore, STATUS_COMPLETED
+from app.pending_store import STATUS_COMPLETED, PendingActionStore
 from app.portfolio_store import PortfolioStore
 
 transport = httpx.ASGITransport(app=app)

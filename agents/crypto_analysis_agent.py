@@ -20,16 +20,18 @@ class CryptoAnalysisAgent:
         portfolio = _extract_portfolio_json(question)
         if not portfolio:
             return AgentResult(
-                answer="No portfolio JSON detected. Provide positions and optional constraints.",
+                answer=(
+                    "No portfolio JSON detected. Provide positions and optional "
+                    "constraints."
+                ),
                 evidence=[],
             )
 
         positions = portfolio.get("positions") or []
         constraints = portfolio.get("constraints") or {}
         normalized_positions = _normalize_positions(positions)
-        summary, risk_checklist, scenarios, next_actions, top_positions = _analyze_portfolio(
-            normalized_positions,
-            constraints,
+        summary, risk_checklist, scenarios, next_actions, top_positions = (
+            _analyze_portfolio(normalized_positions, constraints)
         )
 
         snapshot_id = str(uuid4())
@@ -52,9 +54,10 @@ class CryptoAnalysisAgent:
             risk_checklist,
             next_actions,
         )
+        top_symbols = ",".join([item["symbol"] for item in top_positions])
         evidence = [
             f"positions={len(normalized_positions)}",
-            f"top_positions={','.join([item['symbol'] for item in top_positions])}",
+            f"top_positions={top_symbols}",
             f"snapshot_id={snapshot_id}",
         ]
         return AgentResult(answer=answer, evidence=evidence)
@@ -111,7 +114,11 @@ def _analyze_portfolio(
     constraints: dict[str, object],
 ) -> tuple[str, list[str], dict[str, str], list[str], list[dict[str, object]]]:
     total_qty = sum(float(position.get("qty") or 0.0) for position in positions)
-    sorted_positions = sorted(positions, key=lambda item: float(item.get("qty") or 0.0), reverse=True)
+    sorted_positions = sorted(
+        positions,
+        key=lambda item: float(item.get("qty") or 0.0),
+        reverse=True,
+    )
     top_positions: list[dict[str, object]] = []
     for item in sorted_positions[:3]:
         qty = float(item.get("qty") or 0.0)
@@ -133,12 +140,16 @@ def _analyze_portfolio(
     )
 
     scenarios = {
-        "bull": "Risk-on continuation lifts leaders; keep alerts on outlier rallies.",
+        "bull": (
+            "Risk-on continuation lifts leaders; keep alerts on outlier rallies."
+        ),
         "base": "Sideways rotation; focus on position sizing discipline.",
         "bear": "Risk-off shock; prepare downside trims and cash buffer.",
     }
     if risk_mode.lower() == "conservative":
-        scenarios["bear"] = "Risk-off shock; prioritize capital preservation and reduce exposure."
+        scenarios["bear"] = (
+            "Risk-off shock; prioritize capital preservation and reduce exposure."
+        )
 
     risk_checklist = ["Confirm liquidity for top positions."]
     max_position_pct = _to_float(constraints.get("max_position_pct"))
@@ -150,10 +161,13 @@ def _analyze_portfolio(
         ]
         if over_max:
             risk_checklist.append(
-                f"Positions above max_position_pct ({max_position_pct}%): {', '.join(over_max)}."
+                "Positions above max_position_pct "
+                f"({max_position_pct}%): {', '.join(over_max)}."
             )
     if len(positions) < 2:
-        risk_checklist.append("Portfolio is highly concentrated with fewer than 2 positions.")
+        risk_checklist.append(
+            "Portfolio is highly concentrated with fewer than 2 positions."
+        )
     if concentration >= 80:
         risk_checklist.append("Top-3 concentration exceeds 80%; consider trimming.")
 

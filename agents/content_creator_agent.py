@@ -53,10 +53,17 @@ class ContentCreatorAgent:
 
 
 def _extract_topic(question: str) -> str | None:
+    match = re.search(
+        r"topic:\s*(.+?)(?:\.\s*analysis:|\s*analysis:|$)",
+        question,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+        topic = match.group(1).strip()
+        if topic:
+            return topic
     for line in question.splitlines():
         lowered = line.lower()
-        if "topic:" in lowered:
-            return line.split(":", 1)[1].strip()
         if "subject:" in lowered:
             return line.split(":", 1)[1].strip()
     return None
