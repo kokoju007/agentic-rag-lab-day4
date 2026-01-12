@@ -54,6 +54,22 @@ Invoke-AskUtf8 "DB 백업 검증 절차 알려줘..."
 Invoke-AskUtf8 "지난주 장애 원인이 뭐였지?"
 ```
 
+## Crypto Portfolio Copilot + X Draft Creator
+Quick demo with bundled JSON in `docs/demo/day9` (Windows PowerShell):
+```powershell
+$body = Get-Content -Raw docs/demo/day9/ask.crypto_analysis.json
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+Invoke-RestMethod -Uri "http://localhost:8000/ask" -Method Post -ContentType "application/json; charset=utf-8" -Body $bytes
+
+$body = Get-Content -Raw docs/demo/day9/ask.content_draft.json
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+Invoke-RestMethod -Uri "http://localhost:8000/ask" -Method Post -ContentType "application/json; charset=utf-8" -Body $bytes
+
+$body = Get-Content -Raw docs/demo/day9/ask.publish_request.json
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+Invoke-RestMethod -Uri "http://localhost:8000/ask" -Method Post -ContentType "application/json; charset=utf-8" -Body $bytes
+```
+
 ## Docker
 ```bash
 docker build -t agentic-rag-lab .
