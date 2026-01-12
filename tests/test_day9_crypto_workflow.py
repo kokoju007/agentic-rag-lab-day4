@@ -13,8 +13,8 @@ async def test_crypto_analysis_routes_without_pending(monkeypatch, tmp_path) -> 
     monkeypatch.setenv("APP_DB_PATH", str(tmp_path / "app.db"))
     question = (
         "Analyze this crypto portfolio JSON: "
-        "{\"positions\":[{\"symbol\":\"BTC\",\"qty\":1.25},{\"symbol\":\"ETH\",\"qty\":8.5}],"
-        "\"constraints\":{\"risk_mode\":\"balanced\"}}"
+        '{"positions":[{"symbol":"BTC","qty":1.25},{"symbol":"ETH","qty":8.5}],'
+        '"constraints":{"risk_mode":"balanced"}}'
     )
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/ask", json={"question": question})
@@ -31,10 +31,10 @@ async def test_content_creator_creates_draft(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("APP_DB_PATH", str(db_path))
     question = (
         "Create X thread draft. topic: Week 1 portfolio update. analysis: "
-        "{\"summary\":\"Top positions count=2, concentration(top3)=90.0%.\","
-        "\"risk_checklist\":[\"Confirm liquidity for top positions.\"],"
-        "\"scenarios\":{\"base\":\"Sideways rotation.\"},"
-        "\"top_positions\":[{\"symbol\":\"BTC\"},{\"symbol\":\"ETH\"}]}"
+        '{"summary":"Top positions count=2, concentration(top3)=90.0%.",'
+        '"risk_checklist":["Confirm liquidity for top positions."],'
+        '"scenarios":{"base":"Sideways rotation."},'
+        '"top_positions":[{"symbol":"BTC"},{"symbol":"ETH"}]}'
     )
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/ask", json={"question": question})

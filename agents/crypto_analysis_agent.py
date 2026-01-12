@@ -21,8 +21,7 @@ class CryptoAnalysisAgent:
         if not portfolio:
             return AgentResult(
                 answer=(
-                    "No portfolio JSON detected. Provide positions and optional "
-                    "constraints."
+                    "No portfolio JSON detected. Provide positions and optional " "constraints."
                 ),
                 evidence=[],
             )
@@ -30,8 +29,8 @@ class CryptoAnalysisAgent:
         positions = portfolio.get("positions") or []
         constraints = portfolio.get("constraints") or {}
         normalized_positions = _normalize_positions(positions)
-        summary, risk_checklist, scenarios, next_actions, top_positions = (
-            _analyze_portfolio(normalized_positions, constraints)
+        summary, risk_checklist, scenarios, next_actions, top_positions = _analyze_portfolio(
+            normalized_positions, constraints
         )
 
         snapshot_id = str(uuid4())
@@ -140,34 +139,25 @@ def _analyze_portfolio(
     )
 
     scenarios = {
-        "bull": (
-            "Risk-on continuation lifts leaders; keep alerts on outlier rallies."
-        ),
+        "bull": ("Risk-on continuation lifts leaders; keep alerts on outlier rallies."),
         "base": "Sideways rotation; focus on position sizing discipline.",
         "bear": "Risk-off shock; prepare downside trims and cash buffer.",
     }
     if risk_mode.lower() == "conservative":
-        scenarios["bear"] = (
-            "Risk-off shock; prioritize capital preservation and reduce exposure."
-        )
+        scenarios["bear"] = "Risk-off shock; prioritize capital preservation and reduce exposure."
 
     risk_checklist = ["Confirm liquidity for top positions."]
     max_position_pct = _to_float(constraints.get("max_position_pct"))
     if max_position_pct is not None:
         over_max = [
-            item["symbol"]
-            for item in top_positions
-            if float(item["pct"]) > float(max_position_pct)
+            item["symbol"] for item in top_positions if float(item["pct"]) > float(max_position_pct)
         ]
         if over_max:
             risk_checklist.append(
-                "Positions above max_position_pct "
-                f"({max_position_pct}%): {', '.join(over_max)}."
+                "Positions above max_position_pct " f"({max_position_pct}%): {', '.join(over_max)}."
             )
     if len(positions) < 2:
-        risk_checklist.append(
-            "Portfolio is highly concentrated with fewer than 2 positions."
-        )
+        risk_checklist.append("Portfolio is highly concentrated with fewer than 2 positions.")
     if concentration >= 80:
         risk_checklist.append("Top-3 concentration exceeds 80%; consider trimming.")
 
@@ -186,9 +176,7 @@ def _format_analysis_answer(
     risk_checklist: list[str],
     next_actions: list[str],
 ) -> str:
-    top_lines = ", ".join(
-        f"{item['symbol']} {item['pct']}%" for item in top_positions
-    ) or "none"
+    top_lines = ", ".join(f"{item['symbol']} {item['pct']}%" for item in top_positions) or "none"
     scenario_lines = "; ".join(f"{key}={value}" for key, value in scenarios.items())
     risk_lines = " | ".join(risk_checklist) if risk_checklist else "none"
     action_lines = " | ".join(next_actions) if next_actions else "none"

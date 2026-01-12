@@ -85,9 +85,7 @@ class PortfolioManagerWorkflow:
             )
 
         plan = ["Interpret request"]
-        plan.extend(
-            [f"Queue action for approval: {action['tool']}" for action in actions]
-        )
+        plan.extend([f"Queue action for approval: {action['tool']}" for action in actions])
         return plan, actions
 
     def _action(
