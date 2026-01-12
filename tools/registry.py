@@ -122,6 +122,32 @@ def http_post(args: dict[str, Any]) -> ToolResult:
     return _result("http_post", ok, output, error)
 
 
+def portfolio_rebalance_plan(args: dict[str, Any]) -> ToolResult:
+    request = str(args.get("request") or "")
+    output = json.dumps(
+        {
+            "simulated": True,
+            "plan": "Generated rebalance plan (simulation only).",
+            "request": request,
+        },
+        ensure_ascii=False,
+    )
+    return _result("portfolio_rebalance_plan", True, output)
+
+
+def publish_draft(args: dict[str, Any]) -> ToolResult:
+    draft_id = str(args.get("draft_id") or "")
+    output = json.dumps(
+        {
+            "simulated": True,
+            "published": True,
+            "draft_id": draft_id,
+        },
+        ensure_ascii=False,
+    )
+    return _result("publish_draft", True, output)
+
+
 def _parse_allowed_domains() -> set[str]:
     raw = os.getenv("TOOL_HTTP_POST_ALLOWED_DOMAINS", "").strip()
     if not raw:
@@ -174,6 +200,8 @@ TOOL_REGISTRY: dict[str, ToolFn] = {
     "notify": notify,
     "restart_service": restart_service,
     "http_post": http_post,
+    "portfolio_rebalance_plan": portfolio_rebalance_plan,
+    "publish_draft": publish_draft,
 }
 
 

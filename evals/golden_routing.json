@@ -160,5 +160,20 @@
     "expected_agent": "DocSearchAgent",
     "expected_guardrail_blocked": false,
     "expected_human_review_needed": true
+  },
+  {
+    "id": "route-026",
+    "query": "Analyze this crypto portfolio JSON: {\"positions\":[{\"symbol\":\"BTC\",\"qty\":1.25},{\"symbol\":\"ETH\",\"qty\":8.5}],\"constraints\":{\"risk_mode\":\"balanced\"}}",
+    "expected_agent": "crypto_analysis"
+  },
+  {
+    "id": "route-027",
+    "query": "Create X thread draft. topic: Week 1 portfolio update.",
+    "expected_agent": "content_creator"
+  },
+  {
+    "id": "route-028",
+    "query": "Publish this draft now: 11111111-2222-3333-4444-555555555555",
+    "expected_agent": "portfolio_manager"
   }
 ]

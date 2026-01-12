@@ -1,0 +1,3 @@
+{
+  "question": "Analyze this crypto portfolio JSON: {\"positions\":[{\"symbol\":\"BTC\",\"qty\":1.25,\"avg_cost\":32000},{\"symbol\":\"ETH\",\"qty\":8.5,\"avg_cost\":1800},{\"symbol\":\"SOL\",\"qty\":120}],\"constraints\":{\"max_position_pct\":50,\"risk_mode\":\"balanced\"}}"
+}
